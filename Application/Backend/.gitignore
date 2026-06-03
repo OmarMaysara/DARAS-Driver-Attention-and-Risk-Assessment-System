@@ -1,0 +1,38 @@
+# ========================
+# Virtual Environments
+# ========================
+venv/
+env/
+.venv/
+
+# ========================
+# Database
+# ========================
+# Ignore local SQLite databases to prevent overwriting or leaking data
+*.db
+*.sqlite
+*.sqlite3
+adas.db
+
+# ========================
+# Python Cache
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ========================
+# Environment Variables
+# ========================
+# Ignore hidden files that hold secret keys or passwords
+.env
+.env.local
+
+# ========================
+# IDEs and OS Hidden Files
+# ========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
