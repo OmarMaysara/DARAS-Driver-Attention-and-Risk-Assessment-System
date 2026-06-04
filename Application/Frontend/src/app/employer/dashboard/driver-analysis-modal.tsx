@@ -13,6 +13,7 @@ interface DriverAnalysisModalProps {
 export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalProps) {
   const [mounted, setMounted] = useState(false);
   const [thresholdScore, setThresholdScore] = useState(15);
+  const [targetTime, setTargetTime] = useState<string>("");
   const [debouncedThreshold, setDebouncedThreshold] = useState(15);
   const [timeRange, setTimeRange] = useState<"Hour" | "Day" | "Week" | "Month">("Week");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -89,7 +90,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
     const timestamps: string[] = raw.map((t: any) => t.timestamp ?? "");
     const uniqueDates = new Set(timestamps.map((ts: string) => ts.split(" ")[0]));
-    const multiDay = uniqueDates.size > 1;
+    const multiDay = uniqueDates.size > 1 || timeRange === "Week" || timeRange === "Month";
     return raw.map((t: any) => {
       const [datePart, timePart] = (t.timestamp ?? "").split(" ");
       let label = "–";
@@ -98,7 +99,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
       } else if (datePart) {
         const d = new Date(datePart);
         const mon = d.toLocaleDateString("en-US", { month: "short" });
-        label = timePart ? `${mon} ${d.getDate()} ${timePart.substring(0, 5)}` : `${mon} ${d.getDate()}`;
+        label = (timePart && timeRange !== "Week") ? `${mon} ${d.getDate()} ${timePart.substring(0, 5)}` : `${mon} ${d.getDate()}`;
       }
       return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel: true };
     });
@@ -163,6 +164,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
     const labelStep = Math.max(1, Math.ceil(points.length / 8));
 
+    const targetIdx = targetTime
+      ? points.findIndex((p: {x: number, y: number, label: string}) => p.label === targetTime || p.label.includes(targetTime))
+      : -1;
+    const targetX = targetIdx >= 0 ? points[targetIdx].x : null;
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = points.reduce((acc: string, p: any, i: number) =>
       i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ""
@@ -213,16 +219,28 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
              <label htmlFor="threshold-slider" className="text-[10px] font-black text-rose-500 uppercase tracking-widest whitespace-nowrap">
                Threshold = {thresholdScore}%
              </label>
-             <input 
+             <input
                id="threshold-slider"
-               type="range" 
-               min="0" 
-               max="100" 
+               type="range"
+               min="0"
+               max="100"
                step="1"
                value={thresholdScore}
                onChange={(e) => setThresholdScore(Number(e.target.value))}
                className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
              />
+           </div>
+           <div className="flex items-center gap-2 bg-violet-50 px-4 py-1.5 rounded-full border border-violet-100">
+             <label className="text-[10px] font-black text-violet-500 uppercase tracking-widest whitespace-nowrap">Track</label>
+             <input
+               type="time"
+               value={targetTime}
+               onChange={(e) => setTargetTime(e.target.value)}
+               className="text-[10px] font-bold text-violet-700 bg-transparent border-none outline-none cursor-pointer"
+             />
+             {targetTime && (
+               <button onClick={() => setTargetTime("")} className="text-violet-400 hover:text-violet-600 text-[10px] font-black leading-none">✕</button>
+             )}
            </div>
         </div>
         
@@ -247,7 +265,16 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
             {/* Threshold Line */}
             <line x1={PAD_L} y1={thresholdY} x2={W-PAD_R} y2={thresholdY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
-            
+
+            {/* Target Time Line */}
+            {targetX !== null && (
+              <g>
+                <line x1={targetX} y1={PAD_T} x2={targetX} y2={PAD_T + chartH} stroke="#7c3aed" strokeWidth="2" strokeDasharray="6,4" opacity="0.9" />
+                <rect x={targetX - 24} y={PAD_T - 18} width={48} height={16} rx="4" fill="#7c3aed" opacity="0.9" />
+                <text x={targetX} y={PAD_T - 7} textAnchor="middle" fontSize="10" fontWeight="900" fill="#fff">{targetTime}</text>
+              </g>
+            )}
+
             {/* Data Line */}
             <path d={d} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
 
@@ -258,7 +285,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                 : i % labelStep === 0 || i === points.length - 1;
               return (
                 <g key={`pt-${i}`}>
-                  <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />
+                  {timeRange !== "Hour" && <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />}
                   {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
                   {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
                 </g>
