@@ -14,7 +14,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const [mounted, setMounted] = useState(false);
   const [thresholdScore, setThresholdScore] = useState(15);
   const [debouncedThreshold, setDebouncedThreshold] = useState(15);
-  const [timeRange, setTimeRange] = useState<"Day" | "Week" | "Month">("Week");
+  const [timeRange, setTimeRange] = useState<"Hour" | "Day" | "Week" | "Month">("Week");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reportData, setReportData] = useState<any>(null);
@@ -66,34 +66,43 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   // --- Dynamic Data based on employee or fetched report ---
   const analysis = reportData?.analysis;
   
-  // Use fetched risk trends if available, else fallback
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let riskTrends = analysis?.trend_chart?.map((t: any) => ({
-    label: t.name ? t.name.charAt(0) + t.name.slice(1).toLowerCase() : "Day",
-    score: t.score || 0
-  })) || reportData?.trend_chart?.map((t: any) => ({
-    label: t.name ? t.name.charAt(0) + t.name.slice(1).toLowerCase() : "Day",
-    score: t.score || 0
-  })) || reportData?.risk_trends || reportData?.riskTrends;
-  
-  if (!riskTrends) {
-    if (timeRange === "Day") {
-      riskTrends = [
-        { label: "8am", score: 92 }, { label: "10am", score: 88 }, { label: "12pm", score: 95 },
-        { label: "2pm", score: 84 }, { label: "4pm", score: 89 }, { label: "6pm", score: 91 },
-      ];
-    } else if (timeRange === "Month") {
-      riskTrends = [
-        { label: "W1", score: 85 }, { label: "W2", score: 89 },
-        { label: "W3", score: 94 }, { label: "W4", score: 91 },
-      ];
-    } else {
-      riskTrends = [
-        { label: "Mon", score: 92 }, { label: "Tue", score: 88 }, { label: "Wed", score: 95 },
-        { label: "Thu", score: 84 }, { label: "Fri", score: 89 }, { label: "Sat", score: 91 }, { label: "Sun", score: 94 },
-      ];
+  const riskTrends = (() => {
+    const raw = analysis?.trend_chart ?? reportData?.trend_chart ?? [];
+    if (!raw.length) return [];
+
+    if (timeRange === "Hour") {
+      const seen = new Set<string>();
+      return raw.map((t: any) => {
+        const [datePart, timePart] = (t.timestamp ?? "").split(" ");
+        const [hh, mm] = (timePart ?? "00:00").split(":");
+        const label = `${hh}:${mm}`;
+        const minNum = parseInt(mm ?? "0", 10);
+        const key = `${datePart} ${hh}:${mm}`;
+        let showLabel = false;
+        if (minNum % 5 === 0 && !seen.has(key)) {
+          seen.add(key);
+          showLabel = true;
+        }
+        return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel };
+      });
     }
-  }
+
+    const timestamps: string[] = raw.map((t: any) => t.timestamp ?? "");
+    const uniqueDates = new Set(timestamps.map((ts: string) => ts.split(" ")[0]));
+    const multiDay = uniqueDates.size > 1;
+    return raw.map((t: any) => {
+      const [datePart, timePart] = (t.timestamp ?? "").split(" ");
+      let label = "–";
+      if (!multiDay && timePart) {
+        label = timePart.substring(0, 5);
+      } else if (datePart) {
+        const d = new Date(datePart);
+        const mon = d.toLocaleDateString("en-US", { month: "short" });
+        label = timePart ? `${mon} ${d.getDate()} ${timePart.substring(0, 5)}` : `${mon} ${d.getDate()}`;
+      }
+      return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel: true };
+    });
+  })();
 
   const defaultDistractions = [
     { type: "Phone call", value: 35, color: "#3b82f6", duration: 420 },
@@ -137,27 +146,41 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     const chartW = W - PAD_L - PAD_R;
     const chartH = H - PAD_T - PAD_B;
     
-    // Convert safety score (0-100) to a risk factor (0-1) for the chart
-    // 92 -> risk 0.08
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = riskTrends.map((d: any) => (100 - d.score) / 100);
     const threshold = thresholdScore / 100;
-    const maxData = Math.max(...data, threshold);
+    const maxData = data.length > 0 ? Math.max(...data, threshold) : threshold;
     const maxVal = maxData > 0.5 ? 1.0 : (maxData > 0.3 ? 0.5 : 0.3);
     const thresholdY = PAD_T + chartH - (threshold / maxVal) * chartH;
 
     const points = data.map((val: number, i: number) => {
-      const x = PAD_L + (i / (data.length - 1)) * chartW;
+      const x = data.length > 1
+        ? PAD_L + (i / (data.length - 1)) * chartW
+        : PAD_L + chartW / 2;
       const y = PAD_T + chartH - (val / maxVal) * chartH;
       return { x, y, label: riskTrends[i].label };
     });
 
+    const labelStep = Math.max(1, Math.ceil(points.length / 8));
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const d = points.reduce((acc: string, p: any, i: number) => 
+    const d = points.reduce((acc: string, p: any, i: number) =>
       i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ""
     );
 
-    const areaD = `${d} L ${points[points.length-1].x} ${PAD_T + chartH} L ${points[0].x} ${PAD_T + chartH} Z`;
+    const areaD = points.length > 0
+      ? `${d} L ${points[points.length-1].x} ${PAD_T + chartH} L ${points[0].x} ${PAD_T + chartH} Z`
+      : "";
+
+    if (data.length === 0) {
+      return (
+        <div className="relative w-full h-full flex flex-col pt-4 min-h-0">
+          <div className="flex-1 flex items-center justify-center text-slate-400 text-[13px] font-bold uppercase tracking-widest">
+            No data available
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="relative w-full h-full flex flex-col pt-4 min-h-0">
@@ -173,11 +196,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                 </div>
                {isDropdownOpen && (
                  <div className="absolute top-full left-0 mt-1 w-24 bg-white border border-blue-100 rounded-lg shadow-lg overflow-hidden z-50 animate-fade-in">
-                   {["Day", "Week", "Month"].map(r => (
+                   {["Hour", "Day", "Week", "Month"].map(r => (
                      <div 
                        key={r} 
                        className="px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
-                       onClick={() => { setTimeRange(r as "Day" | "Week" | "Month"); setIsDropdownOpen(false); }}
+                       onClick={() => { setTimeRange(r as "Hour" | "Day" | "Week" | "Month"); setIsDropdownOpen(false); }}
                      >
                        This {r}
                      </div>
@@ -229,14 +252,18 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
             <path d={d} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
 
             {/* Points and X-axis Labels */}
-            {points.map((p: {x: number, y: number, label: string}, i: number) => (
-              <g key={`pt-${i}`}>
-                <circle cx={p.x} cy={p.y} r="5" fill="#white" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />
-                {/* Small tick mark on the X axis */}
-                <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />
-                <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>
-              </g>
-            ))}
+            {points.map((p: {x: number, y: number, label: string}, i: number) => {
+              const showLabel = timeRange === "Hour"
+                ? (riskTrends[i] as any).showLabel === true
+                : i % labelStep === 0 || i === points.length - 1;
+              return (
+                <g key={`pt-${i}`}>
+                  <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />
+                  {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
+                  {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
+                </g>
+              );
+            })}
 
             {/* Y Axis Line */}
             <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
@@ -270,6 +297,10 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     let currentAngle = -Math.PI / 2;
     const cx = 150, cy = 150, R = 90, r = 35;
     const total = allDistractions.reduce((sum, d) => sum + d.value, 0);
+    const centerPct =
+      dr?.total_driving_time != null && dr?.safe_driving_time != null
+        ? ((dr.total_driving_time - dr.safe_driving_time) * 100).toFixed(2)
+        : total;
 
     return (
       <div className="relative w-full h-full flex items-center justify-center">
@@ -325,7 +356,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
              );
           })}
           {/* Center text */}
-          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{total}%</text>
+          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{centerPct}%</text>
         </svg>
       </div>
     );

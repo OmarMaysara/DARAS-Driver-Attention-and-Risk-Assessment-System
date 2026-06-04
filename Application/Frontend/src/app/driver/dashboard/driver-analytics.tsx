@@ -25,10 +25,10 @@ function scoreColor(score: number) {
 /* ─── Components ─── */
 
 interface LineChartProps {
-  riskTrends: { label: string; score: number }[];
+  riskTrends: { label: string; score: number; showLabel?: boolean }[];
   thresholdScore: number;
-  timeRange: "Day" | "Week" | "Month";
-  onTimeRangeChange: (r: "Day" | "Week" | "Month") => void;
+  timeRange: "Hour" | "Day" | "Week" | "Month";
+  onTimeRangeChange: (r: "Hour" | "Day" | "Week" | "Month") => void;
   onThresholdChange: (t: number) => void;
 }
 
@@ -41,23 +41,42 @@ function LineChart({ riskTrends, thresholdScore, timeRange, onTimeRangeChange, o
   
   const data = riskTrends.map((d: any) => (100 - d.score) / 100);
   const threshold = thresholdScore / 100;
-  const maxData = Math.max(...data, threshold);
+  const maxData = data.length > 0 ? Math.max(...data, threshold) : threshold;
   const maxVal = maxData > 0.5 ? 1.0 : (maxData > 0.3 ? 0.5 : 0.3);
   const thresholdY = PAD_T + chartH - (threshold / maxVal) * chartH;
 
   const points = data.map((val: number, i: number) => {
-    const x = data.length > 1 
-      ? PAD_L + (i / (data.length - 1)) * chartW 
+    const x = data.length > 1
+      ? PAD_L + (i / (data.length - 1)) * chartW
       : PAD_L + chartW / 2;
     const y = PAD_T + chartH - (val / maxVal) * chartH;
     return { x, y, label: riskTrends[i].label };
   });
 
-  const dPath = points.reduce((acc: string, p: any, i: number) => 
+  const labelStep = Math.max(1, Math.ceil(points.length / 8));
+
+  const dPath = points.reduce((acc: string, p: any, i: number) =>
     i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ""
   );
 
-  const areaD = `${dPath} L ${points[points.length-1].x} ${PAD_T + chartH} L ${points[0].x} ${PAD_T + chartH} Z`;
+  const areaD = points.length > 0
+    ? `${dPath} L ${points[points.length-1].x} ${PAD_T + chartH} L ${points[0].x} ${PAD_T + chartH} Z`
+    : "";
+
+  if (data.length === 0) {
+    return (
+      <div className="relative w-full h-full flex flex-col pt-4 min-h-0 bg-white border border-blue-100 rounded-[1.5rem] shadow-sm transition-shadow hover:shadow-md">
+        <div className="flex flex-col sm:flex-row justify-between items-center px-4 sm:px-10 gap-4 sm:gap-0 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Risk Projection</span>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center text-slate-400 text-[13px] font-bold uppercase tracking-widest">
+          No data available
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-full flex flex-col pt-4 min-h-0 bg-white border border-blue-100 rounded-[1.5rem] shadow-sm transition-shadow hover:shadow-md">
@@ -73,7 +92,7 @@ function LineChart({ riskTrends, thresholdScore, timeRange, onTimeRangeChange, o
               </div>
              {isDropdownOpen && (
                <div className="absolute top-full left-0 mt-1 w-24 bg-white border border-blue-100 rounded-lg shadow-lg overflow-hidden z-50 animate-fade-in">
-                 {["Day", "Week", "Month"].map(r => (
+                 {["Hour", "Day", "Week", "Month"].map(r => (
                    <div 
                      key={r} 
                      className="px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
@@ -117,13 +136,18 @@ function LineChart({ riskTrends, thresholdScore, timeRange, onTimeRangeChange, o
           <line x1={PAD_L} y1={thresholdY} x2={W-PAD_R} y2={thresholdY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
           <path d={dPath} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
 
-          {points.map((p: any, i: number) => (
-            <g key={`pt-${i}`}>
-              <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />
-              <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />
-              <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>
-            </g>
-          ))}
+          {points.map((p: any, i: number) => {
+            const showLabel = timeRange === "Hour"
+              ? riskTrends[i].showLabel === true
+              : i % labelStep === 0 || i === points.length - 1;
+            return (
+              <g key={`pt-${i}`}>
+                <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />
+                {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
+                {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
+              </g>
+            );
+          })}
 
           <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
           <line x1={PAD_L} y1={PAD_T + chartH} x2={W-PAD_R} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
@@ -144,10 +168,11 @@ function LineChart({ riskTrends, thresholdScore, timeRange, onTimeRangeChange, o
   );
 }
 
-function DonutChart({ distractions }: { distractions: any[] }) {
+function DonutChart({ distractions, centerPct }: { distractions: any[]; centerPct?: number }) {
   let currentAngle = -Math.PI / 2;
   const cx = 150, cy = 150, R = 90, r = 35;
   const total = distractions.reduce((sum, d) => sum + d.value, 0);
+  const displayPct = centerPct !== undefined ? centerPct.toFixed(2) : total;
 
   return (
     <div className="relative w-full h-full flex items-center justify-center">
@@ -177,7 +202,7 @@ function DonutChart({ distractions }: { distractions: any[] }) {
              </g>
            );
         })}
-        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{total}%</text>
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{displayPct}%</text>
       </svg>
     </div>
   );
@@ -214,7 +239,7 @@ function HorizontalBarChart({ distractions }: { distractions: any[] }) {
 export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; deviceSerial: string }) {
   const [mounted, setMounted] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
-  const [timeRange, setTimeRange] = useState<"Day" | "Week" | "Month">("Week");
+  const [timeRange, setTimeRange] = useState<"Hour" | "Day" | "Week" | "Month">("Week");
   const [thresholdScore, setThresholdScore] = useState(15);
 
   const [debouncedThreshold, setDebouncedThreshold] = useState(thresholdScore);
@@ -258,13 +283,42 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
 
   // ── Risk Projection Graph  (analysis.trend_chart) ─────────────────────
   const rawTrend = analysis?.trend_chart ?? null;
-  const riskTrends = rawTrend?.map((t: any) => ({
-    label: t.name  ?? t.label ?? t.day ?? "–",
-    score: t.score ?? t.value ?? 0,
-  })) || [
-    { label: "Mon", score: 92 }, { label: "Tue", score: 88 }, { label: "Wed", score: 95 },
-    { label: "Thu", score: 84 }, { label: "Fri", score: 89 }, { label: "Sat", score: 91 }, { label: "Sun", score: 94 },
-  ];
+  const riskTrends = (() => {
+    if (!rawTrend?.length) return [];
+
+    if (timeRange === "Hour") {
+      const seen = new Set<string>();
+      return rawTrend.map((t: any) => {
+        const [datePart, timePart] = (t.timestamp ?? "").split(" ");
+        const [hh, mm] = (timePart ?? "00:00").split(":");
+        const label = `${hh}:${mm}`;
+        const minNum = parseInt(mm ?? "0", 10);
+        const key = `${datePart} ${hh}:${mm}`;
+        let showLabel = false;
+        if (minNum % 5 === 0 && !seen.has(key)) {
+          seen.add(key);
+          showLabel = true;
+        }
+        return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel };
+      });
+    }
+
+    const timestamps: string[] = rawTrend.map((t: any) => t.timestamp ?? "");
+    const uniqueDates = new Set(timestamps.map((ts: string) => ts.split(" ")[0]));
+    const multiDay = uniqueDates.size > 1;
+    return rawTrend.map((t: any) => {
+      const [datePart, timePart] = (t.timestamp ?? "").split(" ");
+      let label = "–";
+      if (!multiDay && timePart) {
+        label = timePart.substring(0, 5);
+      } else if (datePart) {
+        const d = new Date(datePart);
+        const mon = d.toLocaleDateString("en-US", { month: "short" });
+        label = timePart ? `${mon} ${d.getDate()} ${timePart.substring(0, 5)}` : `${mon} ${d.getDate()}`;
+      }
+      return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel: true };
+    });
+  })();
 
   // ── Distractions (analysis.distractions_split) ────────────────────────
   const colorPalette = ["#3b82f6", "#ef4444", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
@@ -291,6 +345,11 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
   // ── Daily Report  (analysis.daily_report) ─────────────────────────────
   const dr = analysis?.daily_report ?? null;
   const significance = dr?.significance ?? null;
+
+  const distractionCenterPct =
+    dr?.total_driving_time != null && dr?.safe_driving_time != null
+      ? (dr.total_driving_time - dr.safe_driving_time) * 100
+      : undefined;
   
   const reportStats = [
     { label: "Total Drive Time", value: dr?.total_drive_time_mins !== undefined ? `${dr.total_drive_time_mins} Min` : "– Min" },
@@ -450,7 +509,7 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
              <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Distractions Split</h2>
            </div>
            <div className="flex-1 flex items-center justify-center">
-              <DonutChart distractions={distractions} />
+              <DonutChart distractions={distractions} centerPct={distractionCenterPct} />
            </div>
         </div>
 
