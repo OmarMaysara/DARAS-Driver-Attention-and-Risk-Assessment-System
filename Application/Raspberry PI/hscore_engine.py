@@ -63,6 +63,14 @@ Changes from ONNX version
   ADDED    HScoreEngine.process_frame_with_detections()
   CHANGED  HScoreEngine.__init__           model_path now Optional (None = no detector)
   KEPT     All calibration, tracking, Kalman, TTC, proximity, H-Score logic
+
+Bug fix (proximity coordinate handling)
+----------------------------------------
+  FIXED  _EgoLaneProximity._pixel_polygon() now auto-detects whether calibration
+         nodes are normalised [0-1] fractions or absolute pixel coordinates,
+         matching the same logic used in draw_ego_lane() in the main pipeline.
+         Previously it always multiplied by img_w/img_h, which produced
+         wildly off-screen polygons for absolute-pixel calibration files.
 """
 
 from __future__ import annotations
@@ -91,8 +99,8 @@ CLASS_NAMES: List[str] = ["Person", "Rider", "Car"]
 
 _CLASS_RISK: Dict[str, float] = {
     "Person": 1.0,
-    "Rider":  0.9,
-    "Car":    0.7,
+    "Rider":  1.0,
+    "Car":    1.0,
 }
 
 _DEFAULT_CLASS_RISK = 0.5
@@ -118,6 +126,15 @@ _YOLO_NUM_CLS    = len(_YOLO_TO_ENGINE_CLS)   # 3
 _YOLO_INPUT_SIZE = 640
 _YOLO_CONF_DEF   = 0.30
 _YOLO_NMS_DEF    = 0.45
+
+# Urgency distance range:
+#   object at _URGENCY_DIST_MIN_M  → dist_urgency = 1.0
+#   object at _URGENCY_DIST_MAX_M  → dist_urgency = 0.0
+# Matches the original _estimate_urgency() formula.
+_URGENCY_DIST_MIN_M = 1.0    # metres — closer than this = full urgency
+_URGENCY_DIST_MAX_M = 26.0   # metres — farther than this = zero dist urgency
+# TTC threshold: TTC below this (seconds) starts raising urgency toward 1.
+_URGENCY_TTC_MAX_S  = 6.0    # seconds — TTC >= this = zero TTC urgency
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -175,17 +192,28 @@ class _EgoLaneProximity:
     """
     Scores objects by proximity to the ego-lane polygon.
 
-    Polygon nodes from calibration.json are normalised [0, 1] fractions.
-    Score = 1.0 if foot-point (cx, y2) is inside; gradient 1→0 outside.
+    Polygon nodes are loaded from calibration.json.  Coordinate type is
+    auto-detected at render time (same logic as draw_ego_lane in the main
+    pipeline) so both normalised [0-1] and absolute-pixel calibration files
+    are handled correctly:
+
+      • max_x ≤ 1.0 and max_y ≤ 1.0  →  normalised fractions → × frame size
+      • max_x ≤ img_w and max_y ≤ img_h  →  absolute px, same resolution
+      • otherwise                          →  absolute px, different resolution
+                                              scaled by (img_w/max_x, img_h/max_y)
+
+    Score = 1.0 if foot-point (cx, y2) is inside the polygon; gradient 1→0
+    within _GRADIENT_NORM fraction of image width outside the polygon.
     """
 
     _GRADIENT_NORM = 0.20   # fraction of image width over which score falls 1→0
 
     def __init__(self, cal: dict) -> None:
         nodes = cal.get("ego_lane_nodes")
-        self._nodes_frac: Optional[List[Tuple[float, float]]] = None
+        # Store raw values exactly as loaded; type detection deferred to render
+        self._nodes_raw: Optional[List[Tuple[float, float]]] = None
         if nodes and len(nodes) >= 3:
-            self._nodes_frac = [(float(n["x"]), float(n["y"])) for n in nodes]
+            self._nodes_raw = [(float(n["x"]), float(n["y"])) for n in nodes]
 
     @staticmethod
     def _default_trapezoid(img_w: int, img_h: int) -> List[Tuple[float, float]]:
@@ -198,13 +226,35 @@ class _EgoLaneProximity:
         ]
 
     def _pixel_polygon(self, img_w: int, img_h: int) -> List[Tuple[float, float]]:
-        if self._nodes_frac is None:
+        """
+        Convert stored calibration nodes to pixel coordinates for the
+        current frame size, using coordinate-type auto-detection.
+        """
+        if self._nodes_raw is None:
             return self._default_trapezoid(img_w, img_h)
+
+        # Degenerate: unit-corner nodes → default trapezoid
         unit_pts = {(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)}
-        node_pts = {(n[0], n[1]) for n in self._nodes_frac}
-        if node_pts == unit_pts:
+        if {(n[0], n[1]) for n in self._nodes_raw} == unit_pts:
             return self._default_trapezoid(img_w, img_h)
-        return [(n[0] * img_w, n[1] * img_h) for n in self._nodes_frac]
+
+        max_x = max(p[0] for p in self._nodes_raw)
+        max_y = max(p[1] for p in self._nodes_raw)
+
+        if max_x <= 1.0 and max_y <= 1.0:
+            # ── Normalised [0-1] fractions ─────────────────────────────
+            return [(n[0] * img_w, n[1] * img_h) for n in self._nodes_raw]
+
+        elif max_x <= img_w and max_y <= img_h:
+            # ── Absolute pixels, same camera resolution — use directly ─
+            return [(n[0], n[1]) for n in self._nodes_raw]
+
+        else:
+            # ── Absolute pixels from a different resolution — scale ─────
+            return [
+                (n[0] / max_x * img_w, n[1] / max_y * img_h)
+                for n in self._nodes_raw
+            ]
 
     @staticmethod
     def _point_in_polygon(px: float, py: float,
@@ -567,29 +617,64 @@ class HScoreEngine:
         cls_name:  str,
         proximity: float,
         ttc:       Optional[float],
+        distance:  float = 0.0,
     ) -> Tuple[float, Dict]:
+        """
+        Compute H-Score from class risk, proximity, and urgency.
+
+        Urgency uses TWO components (same formula as the original pipeline):
+
+          dist_urgency = 1 - (distance - DIST_MIN) / (DIST_MAX - DIST_MIN)
+                         clamped to [0, 1]
+            • Always active — gives non-zero urgency whenever an object is
+              within DIST_MAX metres, regardless of whether it is approaching.
+            • Object at 1 m  → 1.0,  at 26 m → 0.0,  at 13.5 m → 0.5
+
+          ttc_urgency  = 1 - TTC / TTC_MAX_S
+                         clamped to [0, 1]  (0 when TTC is None)
+            • Active only when the Kalman filter has confirmed the object is
+              closing (TTC available).  Boosts urgency for fast approach.
+            • TTC at 0 s → 1.0,  at 6 s → 0.0,  at 3 s → 0.5
+
+          urgency = max(dist_urgency, ttc_urgency)
+
+        Using max() means distance provides a reliable floor while a confirmed
+        fast approach can push urgency to its full value.
+        """
         class_risk = _CLASS_RISK.get(cls_name, _DEFAULT_CLASS_RISK)
 
-        if ttc is None or ttc <= 0:
-            inv_ttc = 0.0
+        # Distance-based urgency — always non-zero within DIST_MAX
+        dist_urgency = float(np.clip(
+            1.0 - (distance - _URGENCY_DIST_MIN_M) /
+                  (_URGENCY_DIST_MAX_M - _URGENCY_DIST_MIN_M),
+            0.0, 1.0,
+        ))
+
+        # TTC-based urgency — only when Kalman confirms approach
+        if ttc is not None and ttc > 0:
+            ttc_urgency = float(np.clip(1.0 - ttc / _URGENCY_TTC_MAX_S, 0.0, 1.0))
         else:
-            inv_ttc = float(np.clip(self.TTC_MIN / ttc, 0.0, 1.0))
+            ttc_urgency = 0.0
+
+        urgency = max(dist_urgency, ttc_urgency)
 
         denom = self.w_class + self.w_proximity + self.w_urgency or 1.0
         numerator = (
             self.w_class     * class_risk +
             self.w_proximity * proximity  +
-            self.w_urgency   * inv_ttc
+            self.w_urgency   * urgency
         )
         h = float(np.clip(numerator / denom, 0.0, 1.0))
 
         components = {
-            "class_risk":  class_risk,
-            "proximity":   proximity,
-            "urgency":     inv_ttc,
-            "w_class":     self.w_class,
-            "w_proximity": self.w_proximity,
-            "w_urgency":   self.w_urgency,
+            "class_risk":   class_risk,
+            "proximity":    proximity,
+            "urgency":      urgency,
+            "dist_urgency": dist_urgency,
+            "ttc_urgency":  ttc_urgency,
+            "w_class":      self.w_class,
+            "w_proximity":  self.w_proximity,
+            "w_urgency":    self.w_urgency,
         }
         return h, components
 
@@ -621,7 +706,7 @@ class HScoreEngine:
             ttc       = self._ttc_mgr.update(track_id, distance, dt)
             cx_box    = (x1 + x2) / 2.0
             proximity = self._proximity.score(cx_box, float(y2), img_w, img_h)
-            hscore, components = self._compute_hscore(cls_name, proximity, ttc)
+            hscore, components = self._compute_hscore(cls_name, proximity, ttc, distance)
 
             results.append({
                 "track_id":   track_id,

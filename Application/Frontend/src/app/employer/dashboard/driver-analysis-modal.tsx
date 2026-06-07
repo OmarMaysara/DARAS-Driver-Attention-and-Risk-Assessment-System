@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { DateRangePicker, type PickerValue } from "@/app/components/date-range-picker";
 import { createPortal } from "react-dom";
 import { type Employee } from "../employer-session";
 
@@ -15,8 +16,57 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const [thresholdScore, setThresholdScore] = useState(15);
   const [targetTime, setTargetTime] = useState<string>("");
   const [debouncedThreshold, setDebouncedThreshold] = useState(15);
+<<<<<<< HEAD
   const [timeRange, setTimeRange] = useState<"Hour" | "Day" | "Week" | "Month">("Week");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+=======
+  const [picker, setPicker] = useState<PickerValue>({ startDate:null, endDate:null, timeframe:"week", hour:null });
+
+  const { startDate, endDate, timeframe: selectedTimeframe, hour: selectedHour } = picker;
+  const timeRange = (selectedTimeframe.charAt(0).toUpperCase() + selectedTimeframe.slice(1)) as "Hour"|"Day"|"Week"|"Month";
+
+  function handleDateRangeChange(v: PickerValue) { setPicker(v); }
+
+  /* ── Chart zoom (outer level — survives threshold/date re-renders) ── */
+  const CHART_W = 1000, CHART_H = 250;
+  const svgRef   = useRef<SVGSVGElement>(null);
+  const scrubRef = useRef<HTMLDivElement>(null);
+  const vbRef    = useRef({ x: 0, y: 0, w: CHART_W, h: CHART_H });
+  const [vb, setVb] = useState({ x: 0, y: 0, w: CHART_W, h: CHART_H });
+  const scrubDrag = useRef<{ sx: number; ox: number } | null>(null);
+  const isZoomed  = vb.w < CHART_W * 0.99;
+  const zoomPct   = Math.round(CHART_W / vb.w * 100);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!scrubDrag.current || !scrubRef.current) return;
+      const rect = scrubRef.current.getBoundingClientRect();
+      const { w } = vbRef.current;
+      const dx = (e.clientX - scrubDrag.current.sx) / rect.width * CHART_W;
+      const next = { ...vbRef.current, x: Math.max(0, Math.min(CHART_W - w, scrubDrag.current.ox + dx)) };
+      vbRef.current = next; setVb(next);
+    }
+    function onUp() { scrubDrag.current = null; }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
+  function zoomBy(factor: number) {
+    const { x, y, w, h } = vbRef.current;
+    const newW = Math.max(150, Math.min(CHART_W, w * factor));
+    const newH = newW * (CHART_H / CHART_W);
+    const next = {
+      x: Math.max(0, Math.min(CHART_W - newW, (x + w/2) - newW/2)),
+      y: Math.max(0, Math.min(CHART_H - newH, (y + h/2) - newH/2)),
+      w: newW, h: newH,
+    };
+    vbRef.current = next; setVb(next);
+  }
+
+  function resetZoom() { const r={x:0,y:0,w:CHART_W,h:CHART_H}; vbRef.current=r; setVb(r); }
+  /* ─────────────────────────────────────────────────────────────────── */
+>>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reportData, setReportData] = useState<any>(null);
 
@@ -41,8 +91,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         const { getEmployerAuthToken, API_ENDPOINTS, COMMON_HEADERS } = await import("@/lib/api-config");
         const token = getEmployerAuthToken();
         const baseUrl = new URL(API_ENDPOINTS.DRIVER_DETAILS(employee.email || "unknown"));
-        baseUrl.searchParams.append("timeframe", timeRange.toLowerCase());
+        baseUrl.searchParams.append("timeframe", selectedTimeframe);
         baseUrl.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+        if (startDate)             baseUrl.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
+        if (endDate)               baseUrl.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
+        if (selectedHour !== null) baseUrl.searchParams.append("hour", String(selectedHour));
         
         const res = await fetch(baseUrl.toString(), {
           headers: {
@@ -60,7 +113,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     }
     
     fetchReport();
-  }, [employee.email, debouncedThreshold, timeRange]);
+  }, [employee.email, debouncedThreshold, selectedTimeframe, startDate, endDate, selectedHour]);
 
   if (!mounted) return null;
 
@@ -164,10 +217,13 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
     const labelStep = Math.max(1, Math.ceil(points.length / 8));
 
+<<<<<<< HEAD
     const targetIdx = targetTime
       ? points.findIndex((p: {x: number, y: number, label: string}) => p.label === targetTime || p.label.includes(targetTime))
       : -1;
     const targetX = targetIdx >= 0 ? points[targetIdx].x : null;
+=======
+>>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = points.reduce((acc: string, p: any, i: number) =>
@@ -181,8 +237,19 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     if (data.length === 0) {
       return (
         <div className="relative w-full h-full flex flex-col pt-4 min-h-0">
+<<<<<<< HEAD
           <div className="flex-1 flex items-center justify-center text-slate-400 text-[13px] font-bold uppercase tracking-widest">
             No data available
+=======
+          <div className="flex items-center gap-2 px-4 sm:px-10 shrink-0">
+            <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Risk Projection</span>
+            <DateRangePicker {...picker} onChange={handleDateRangeChange} />
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center gap-2">
+            <span className="text-slate-300 text-4xl">📊</span>
+            <span className="text-slate-400 text-[13px] font-bold uppercase tracking-widest">No data for this period</span>
+            <span className="text-slate-300 text-[10px] font-medium">Pick a date range above to load trip data</span>
+>>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
           </div>
         </div>
       );
@@ -193,6 +260,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         <div className="flex flex-col sm:flex-row justify-between items-center px-4 sm:px-10 gap-4 sm:gap-0 shrink-0">
            <div className="flex items-center gap-2 relative">
              <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Risk Projection</span>
+<<<<<<< HEAD
              <div className="relative">
                 <div 
                   onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -214,6 +282,9 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                  </div>
                )}
              </div>
+=======
+             <DateRangePicker {...picker} onChange={handleDateRangeChange} />
+>>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
            </div>
            <div className="flex items-center gap-3 bg-rose-50 px-4 py-1.5 rounded-full border border-rose-100">
              <label htmlFor="threshold-slider" className="text-[10px] font-black text-rose-500 uppercase tracking-widest whitespace-nowrap">
@@ -230,6 +301,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
              />
            </div>
+<<<<<<< HEAD
            <div className="flex items-center gap-2 bg-violet-50 px-4 py-1.5 rounded-full border border-violet-100">
              <label className="text-[10px] font-black text-violet-500 uppercase tracking-widest whitespace-nowrap">Track</label>
              <input
@@ -240,12 +312,22 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
              />
              {targetTime && (
                <button onClick={() => setTargetTime("")} className="text-violet-400 hover:text-violet-600 text-[10px] font-black leading-none">✕</button>
+=======
+           <div className="flex items-center gap-1.5">
+             <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
+               <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">−</button>
+               <span className="text-[9px] font-black text-slate-400 w-9 text-center tabular-nums">{zoomPct}%</span>
+               <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">+</button>
+             </div>
+             {isZoomed && (
+               <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">↺ Reset</button>
+>>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
              )}
            </div>
         </div>
-        
+
         <div className="relative flex-1 w-full mt-4 min-h-0">
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
+          <svg ref={svgRef} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
             {/* Area under the line */}
             <defs>
               <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
@@ -266,6 +348,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
             {/* Threshold Line */}
             <line x1={PAD_L} y1={thresholdY} x2={W-PAD_R} y2={thresholdY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
 
+<<<<<<< HEAD
             {/* Target Time Line */}
             {targetX !== null && (
               <g>
@@ -274,6 +357,8 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                 <text x={targetX} y={PAD_T - 7} textAnchor="middle" fontSize="10" fontWeight="900" fill="#fff">{targetTime}</text>
               </g>
             )}
+=======
+>>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
 
             {/* Data Line */}
             <path d={d} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
@@ -314,6 +399,15 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
               Risk Score
             </text>
           </svg>
+          {isZoomed && (
+            <div ref={scrubRef} className="mx-10 mb-3 h-2 bg-slate-100 rounded-full relative cursor-pointer">
+              <div
+                className="absolute top-0 h-full bg-blue-400 rounded-full hover:bg-blue-500 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
+                style={{ left: `${(vb.x/CHART_W)*100}%`, width: `${(vb.w/CHART_W)*100}%` }}
+                onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+              />
+            </div>
+          )}
         </div>
       </div>
     );

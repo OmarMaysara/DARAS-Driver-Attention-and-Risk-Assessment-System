@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EmployerDashboardShell } from "../employer-dashboard-shell";
 import { EMPLOYEES_KEY, type Employee } from "../../employer-session";
 import { API_ENDPOINTS, COMMON_HEADERS, getEmployerAuthToken, getEmployerId } from "@/lib/api-config";
-import { Download, ChevronDown, Users, AlertTriangle } from "lucide-react";
+import { Download, Users, AlertTriangle } from "lucide-react";
+import { DateRangePicker, type PickerValue } from "@/app/components/date-range-picker";
 
 function loadEmployees(): Employee[] {
   if (typeof window === "undefined") return [];
@@ -26,21 +27,61 @@ function grade(s: number) {
 }
 
 /* ── Line Chart (fleet avg risk over time) ── */
-function FleetLineChart({ trendChart, timeRange, setTimeRange, threshold, setThreshold }: {
+function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThreshold }: {
   trendChart: any[];
-  timeRange: "Day" | "Week" | "Month";
-  setTimeRange: (r: "Day" | "Week" | "Month") => void;
+  picker: PickerValue;
+  onPickerChange: (v: PickerValue) => void;
   threshold: number;
   setThreshold: (n: number) => void;
 }) {
-  const [dropOpen, setDropOpen] = useState(false);
-  
+  const { startDate, endDate } = picker;
+  const W = 1000, H = 250;
+
+  /* ── Zoom ───────────────────────────────────────────── */
+  const svgRef   = useRef<SVGSVGElement>(null);
+  const scrubRef = useRef<HTMLDivElement>(null);
+  const vbRef    = useRef({ x: 0, y: 0, w: W, h: H });
+  const [vb, setVb] = useState({ x: 0, y: 0, w: W, h: H });
+  const scrubDrag = useRef<{ sx: number; ox: number } | null>(null);
+  const isZoomed  = vb.w < W * 0.99;
+  const zoomPct   = Math.round(W / vb.w * 100);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!scrubDrag.current || !scrubRef.current) return;
+      const rect = scrubRef.current.getBoundingClientRect();
+      const { w } = vbRef.current;
+      const dx = (e.clientX - scrubDrag.current.sx) / rect.width * W;
+      const next = { ...vbRef.current, x: Math.max(0, Math.min(W - w, scrubDrag.current.ox + dx)) };
+      vbRef.current = next; setVb(next);
+    }
+    function onUp() { scrubDrag.current = null; }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
+  function zoomBy(factor: number) {
+    const { x, y, w, h } = vbRef.current;
+    const newW = Math.max(150, Math.min(W, w * factor));
+    const newH = newW * (H / W);
+    const next = {
+      x: Math.max(0, Math.min(W - newW, (x + w/2) - newW/2)),
+      y: Math.max(0, Math.min(H - newH, (y + h/2) - newH/2)),
+      w: newW, h: newH,
+    };
+    vbRef.current = next; setVb(next);
+  }
+
+  function resetZoom() { const r={x:0,y:0,w:W,h:H}; vbRef.current=r; setVb(r); }
+  /* ────────────────────────────────────────────────────── */
+
   const parsedTrends = trendChart && trendChart.length > 0 ? trendChart : [];
   
   const labels = parsedTrends.length > 0 ? parsedTrends.map((t: any) => t.name ? t.name.charAt(0) + t.name.slice(1).toLowerCase() : "") : ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const data = parsedTrends.length > 0 ? parsedTrends.map((t: any) => (100 - t.score) / 100) : [0,0,0,0,0,0,0];
 
-  const W = 1000, H = 250, PL = 90, PR = 40, PT = 20, PB = 55;
+  const PL = 90, PR = 40, PT = 20, PB = 55;
   const CW = W - PL - PR, CH = H - PT - PB;
   const maxVal = Math.max(...data, threshold / 100) > 0.5 ? 1.0 : (Math.max(...data, threshold / 100) > 0.3 ? 0.5 : 0.3);
   const thY = PT + CH - ((threshold / 100) / maxVal) * CH;
@@ -58,22 +99,7 @@ function FleetLineChart({ trendChart, timeRange, setTimeRange, threshold, setThr
       <div className="flex flex-col sm:flex-row justify-between items-center px-4 sm:px-10 gap-3 shrink-0">
         <div className="flex items-center gap-2 relative">
           <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Fleet Risk Projection</span>
-          <div className="relative">
-            <div onClick={() => setDropOpen(!dropOpen)}
-              className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100 flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors">
-              This {timeRange} <ChevronDown size={10} />
-            </div>
-            {dropOpen && (
-              <div className="absolute top-full left-0 mt-1 w-24 bg-white border border-blue-100 rounded-lg shadow-lg overflow-hidden z-[60]">
-                {(["Day","Week","Month"] as const).map(r => (
-                  <div key={r} onClick={() => { setTimeRange(r); setDropOpen(false); }}
-                    className="px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 cursor-pointer">
-                    This {r}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <DateRangePicker {...picker} onChange={onPickerChange} />
         </div>
         <div className="flex items-center gap-3 bg-rose-50 px-4 py-1.5 rounded-full border border-rose-100">
           <label className="text-[10px] font-black text-rose-500 uppercase tracking-widest whitespace-nowrap">
@@ -83,9 +109,19 @@ function FleetLineChart({ trendChart, timeRange, setTimeRange, threshold, setThr
             onChange={e => setThreshold(Number(e.target.value))}
             className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500" />
         </div>
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
+            <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">−</button>
+            <span className="text-[9px] font-black text-slate-400 w-9 text-center tabular-nums">{zoomPct}%</span>
+            <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">+</button>
+          </div>
+          {isZoomed && (
+            <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">↺ Reset</button>
+          )}
+        </div>
       </div>
       <div className="relative flex-1 w-full mt-4 min-h-0">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
+        <svg ref={svgRef} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
           <defs>
             <linearGradient id="fleetGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#3b82f6" />
@@ -119,6 +155,15 @@ function FleetLineChart({ trendChart, timeRange, setTimeRange, threshold, setThr
           })}
           <text x={25} y={PT+CH/2} transform={`rotate(-90 25 ${PT+CH/2})`} textAnchor="middle" fontSize="12" fill="#94a3b8" fontWeight="700">Risk Score</text>
         </svg>
+        {isZoomed && (
+          <div ref={scrubRef} className="mx-10 mb-3 h-2 bg-slate-100 rounded-full relative cursor-pointer">
+            <div
+              className="absolute top-0 h-full bg-blue-400 rounded-full hover:bg-blue-500 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
+              style={{ left: `${(vb.x/W)*100}%`, width: `${(vb.w/W)*100}%` }}
+              onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -236,9 +281,11 @@ export default function ReportsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [fleetAnalysis, setFleetAnalysis] = useState<any>(null);
   const [mounted, setMounted] = useState(false);
-  const [timeRange, setTimeRange] = useState<"Day" | "Week" | "Month">("Week");
+  const [picker, setPicker] = useState<PickerValue>({ startDate:null, endDate:null, timeframe:"week", hour:null });
   const [thresholdScore, setThresholdScore] = useState(15);
   const [debouncedThreshold, setDebouncedThreshold] = useState(15);
+
+  const { startDate, endDate, timeframe: selectedTimeframe, hour: selectedHour } = picker;
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedThreshold(thresholdScore), 500);
@@ -275,8 +322,11 @@ export default function ReportsPage() {
 
         // 2. Fetch new Fleet Analysis endpoint
         const baseUrl = new URL(eid ? `${API_ENDPOINTS.REPORTS}?employer_id=${eid}` : API_ENDPOINTS.REPORTS);
-        baseUrl.searchParams.append("timeframe", timeRange.toLowerCase());
+        baseUrl.searchParams.append("timeframe", selectedTimeframe);
         baseUrl.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+        if (startDate)             baseUrl.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
+        if (endDate)               baseUrl.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
+        if (selectedHour !== null) baseUrl.searchParams.append("hour", String(selectedHour));
 
         const resF = await fetch(baseUrl.toString(), { headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS } });
         if (resF.ok) {
@@ -290,7 +340,7 @@ export default function ReportsPage() {
     }
     load().finally(() => setMounted(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange, debouncedThreshold]); // Reload when timeframe/threshold change
+  }, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
 
   const fr = fleetAnalysis?.fleet_report;
   const summary = fleetAnalysis?.summary;
@@ -382,7 +432,7 @@ export default function ReportsPage() {
           <>
             {/* ── Line Chart Card ── */}
             <div className="bg-white rounded-[1.5rem] border border-blue-50 shadow-sm mb-6 overflow-hidden fp" style={{ height: 280 }}>
-              <FleetLineChart trendChart={fleetAnalysis?.trend_chart || []} timeRange={timeRange} setTimeRange={setTimeRange} threshold={thresholdScore} setThreshold={setThresholdScore} />
+              <FleetLineChart trendChart={fleetAnalysis?.trend_chart || []} picker={picker} onPickerChange={setPicker} threshold={thresholdScore} setThreshold={setThresholdScore} />
             </div>
 
             {/* ── 3 Bottom Panels ── */}
