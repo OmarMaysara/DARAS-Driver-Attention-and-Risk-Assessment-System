@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Download, Clock, MapPin, AlertTriangle, Route } from "lucide-react";
 import { DateRangePicker, type PickerValue, type TimeframeMode } from "@/app/components/date-range-picker";
 
-/* ─── Types ─────────────────────────────────────────────────────────── */
+/* ========== Types ========== */
 interface DriverData {
   safetyScore: number;
   trips: number;
@@ -14,7 +14,7 @@ interface DriverData {
   name: string;
 }
 
-/* ─── Score Helpers ─── */
+/* ========== Score Helpers ========== */
 function scoreColor(score: number) {
   if (score >= 85) return { bar: "#22c55e", text: "#15803d", label: "Excellent", bg: "bg-emerald-50", ring: "ring-emerald-100", textClass: "text-emerald-600" };
   if (score >= 70) return { bar: "#84cc16", text: "#3f6212", label: "Verified", bg: "bg-amber-50", ring: "ring-amber-100", textClass: "text-amber-600" };
@@ -23,21 +23,21 @@ function scoreColor(score: number) {
   return { bar: "#ef4444", text: "#991b1b", label: "Critical", bg: "bg-rose-100", ring: "ring-rose-200", textClass: "text-rose-700" };
 }
 
-/* ─── Components ─── */
+/* ========== Components ========== */
 
 interface LineChartProps {
   riskTrends: { label: string; score: number; showLabel?: boolean }[];
   thresholdScore: number;
   timeRange: "Hour" | "Day" | "Week" | "Month";
-<<<<<<< HEAD
-  onTimeRangeChange: (r: "Hour" | "Day" | "Week" | "Month") => void;
+  pickerValue: PickerValue;
+  onPickerChange: (v: PickerValue) => void;
   onThresholdChange: (t: number) => void;
 }
 
-function LineChart({ riskTrends, thresholdScore, timeRange, onTimeRangeChange, onThresholdChange }: LineChartProps) {
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [targetTime, setTargetTime] = useState<string>("");
-=======
+interface LineChartProps {
+  riskTrends: { label: string; score: number; showLabel?: boolean }[];
+  thresholdScore: number;
+  timeRange: "Hour" | "Day" | "Week" | "Month";
   pickerValue: PickerValue;
   onPickerChange: (v: PickerValue) => void;
   onThresholdChange: (t: number) => void;
@@ -45,10 +45,9 @@ function LineChart({ riskTrends, thresholdScore, timeRange, onTimeRangeChange, o
 
 function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPickerChange, onThresholdChange }: LineChartProps) {
   const { startDate, endDate } = pickerValue;
->>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
   const W = 1000, H = 250;
 
-  /* ── Zoom ───────────────────────────────────────────── */
+  /* ========== Zoom Controls ========== */
   const svgRef  = useRef<SVGSVGElement>(null);
   const scrubRef = useRef<HTMLDivElement>(null);
   const vbRef   = useRef({ x: 0, y: 0, w: W, h: H });
@@ -73,46 +72,41 @@ function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPicke
   }, []);
 
   function zoomBy(factor: number) {
-    const { x, y, w, h } = vbRef.current;
+    const { x, w } = vbRef.current;
     const newW = Math.max(150, Math.min(W, w * factor));
-    const newH = newW * (H / W);
     const next = {
       x: Math.max(0, Math.min(W - newW, (x + w / 2) - newW / 2)),
-      y: Math.max(0, Math.min(H - newH, (y + h / 2) - newH / 2)),
-      w: newW, h: newH,
+      y: 0,
+      w: newW,
+      h: H,
     };
     vbRef.current = next; setVb(next);
   }
 
   function resetZoom() { const r={x:0,y:0,w:W,h:H}; vbRef.current=r; setVb(r); }
-  /* ────────────────────────────────────────────────────── */
+  
+  /* ========== Rendering ========== */
   const PAD_L = 90, PAD_R = 40, PAD_T = 20, PAD_B = 55;
   const chartW = W - PAD_L - PAD_R;
   const chartH = H - PAD_T - PAD_B;
   
-  const data = riskTrends.map((d: any) => (100 - d.score) / 100);
+  const data = riskTrends.map((d: any) => d.score / 100);
   const threshold = thresholdScore / 100;
   const maxData = data.length > 0 ? Math.max(...data, threshold) : threshold;
   const maxVal = maxData > 0.5 ? 1.0 : (maxData > 0.3 ? 0.5 : 0.3);
   const thresholdY = PAD_T + chartH - (threshold / maxVal) * chartH;
 
   const points = data.map((val: number, i: number) => {
-    const x = data.length > 1
-      ? PAD_L + (i / (data.length - 1)) * chartW
-      : PAD_L + chartW / 2;
+    const origX = data.length > 1 ? (i / (data.length - 1)) * W : W / 2;
+    const x = PAD_L + ((origX - vb.x) / vb.w) * chartW;
     const y = PAD_T + chartH - (val / maxVal) * chartH;
-    return { x, y, label: riskTrends[i].label };
+    
+    const inView = x >= PAD_L && x <= W - PAD_R;
+    return { x, y, label: riskTrends[i].label, inView };
   });
 
-  const labelStep = Math.max(1, Math.ceil(points.length / 8));
-
-<<<<<<< HEAD
-  const targetIdx = targetTime
-    ? points.findIndex((p: any) => p.label === targetTime || p.label.includes(targetTime))
-    : -1;
-  const targetX = targetIdx >= 0 ? points[targetIdx].x : null;
-=======
->>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
+  const visibleCount = Math.max(1, (vb.w / W) * data.length);
+  const labelStep = Math.max(1, Math.ceil(visibleCount / 8));
 
   const dPath = points.reduce((acc: string, p: any, i: number) =>
     i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ""
@@ -128,20 +122,13 @@ function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPicke
         <div className="flex flex-col sm:flex-row justify-between items-center px-4 sm:px-10 gap-4 sm:gap-0 shrink-0">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Risk Projection</span>
-<<<<<<< HEAD
-          </div>
-        </div>
-        <div className="flex-1 flex items-center justify-center text-slate-400 text-[13px] font-bold uppercase tracking-widest">
-          No data available
-=======
             <DateRangePicker {...pickerValue} onChange={onPickerChange} />
           </div>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-2">
-          <span className="text-slate-300 text-4xl">📊</span>
+          <span className="text-slate-300 text-4xl">📉</span>
           <span className="text-slate-400 text-[13px] font-bold uppercase tracking-widest">No data for this period</span>
           <span className="text-slate-300 text-[10px] font-medium">Pick a date range above to load trip data</span>
->>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
         </div>
       </div>
     );
@@ -152,31 +139,7 @@ function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPicke
       <div className="flex flex-col sm:flex-row justify-between items-center px-4 sm:px-10 gap-4 sm:gap-0 shrink-0">
          <div className="flex items-center gap-2 relative">
            <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Risk Projection</span>
-<<<<<<< HEAD
-           <div className="relative">
-              <div 
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100 flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors"
-              >
-                This {timeRange} <ChevronDown size={10} />
-              </div>
-             {isDropdownOpen && (
-               <div className="absolute top-full left-0 mt-1 w-24 bg-white border border-blue-100 rounded-lg shadow-lg overflow-hidden z-50 animate-fade-in">
-                 {["Hour", "Day", "Week", "Month"].map(r => (
-                   <div 
-                     key={r} 
-                     className="px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
-                     onClick={() => { onTimeRangeChange(r as any); setIsDropdownOpen(false); }}
-                   >
-                     This {r}
-                   </div>
-                 ))}
-               </div>
-             )}
-           </div>
-=======
            <DateRangePicker {...pickerValue} onChange={onPickerChange} />
->>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
          </div>
          <div className="flex items-center gap-3 bg-rose-50 px-4 py-1.5 rounded-full border border-rose-100">
            <label className="text-[10px] font-black text-rose-500 uppercase tracking-widest whitespace-nowrap">
@@ -189,40 +152,30 @@ function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPicke
              className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
            />
          </div>
-<<<<<<< HEAD
-         <div className="flex items-center gap-2 bg-violet-50 px-4 py-1.5 rounded-full border border-violet-100">
-           <label className="text-[10px] font-black text-violet-500 uppercase tracking-widest whitespace-nowrap">Track</label>
-           <input
-             type="time"
-             value={targetTime}
-             onChange={(e) => setTargetTime(e.target.value)}
-             className="text-[10px] font-bold text-violet-700 bg-transparent border-none outline-none cursor-pointer"
-           />
-           {targetTime && (
-             <button onClick={() => setTargetTime("")} className="text-violet-400 hover:text-violet-600 text-[10px] font-black leading-none">✕</button>
-=======
-         <div className="flex items-center gap-1.5">
-           <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-             <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">−</button>
-             <span className="text-[9px] font-black text-slate-400 w-9 text-center tabular-nums">{zoomPct}%</span>
-             <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">+</button>
+         <div className="flex items-center gap-2">
+           <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden shadow-sm" title="Zoom the timeline to inspect risk scores in detail">
+             <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-blue-100 hover:text-blue-600 font-black text-lg leading-none disabled:opacity-20 transition-all" title="Zoom out">−</button>
+             <span className="text-[9px] font-black text-slate-500 w-10 text-center tabular-nums bg-white px-1 py-0.5">{zoomPct}%</span>
+             <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-blue-100 hover:text-blue-600 font-black text-lg leading-none disabled:opacity-20 transition-all" title="Zoom in">+</button>
            </div>
            {isZoomed && (
-             <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">↺ Reset</button>
->>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
+             <button onClick={resetZoom} className="px-3 py-1.5 rounded-full bg-blue-50 text-blue-600 text-[9px] font-black uppercase tracking-widest border border-blue-200 hover:bg-blue-100 transition-all shadow-sm" title="Reset zoom to full timeline">↺ Reset</button>
            )}
          </div>
       </div>
 
-      <div className="relative flex-1 w-full mt-4 min-h-0">
-        <svg ref={svgRef} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
+      <div className="relative flex-1 w-full mt-4 min-h-0" title="Click + drag to pan when zoomed, scroll to zoom, or use the zoom buttons above">
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible cursor-grab active:cursor-grabbing">
           <defs>
             <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#3b82f6" />
               <stop offset="100%" stopColor="transparent" />
             </linearGradient>
+            
+            <clipPath id="chart-area-clip">
+              <rect x={PAD_L} y={0} width={chartW} height={H} />
+            </clipPath>
           </defs>
-          <path d={areaD} fill="url(#lineGradient)" opacity="0.15" />
 
           {(maxVal === 1.0 ? [0, 0.2, 0.4, 0.6, 0.8, 1.0] : maxVal === 0.5 ? [0, 0.1, 0.2, 0.3, 0.4, 0.5] : [0, 0.1, 0.2, 0.3]).map((val) => {
             const y = PAD_T + chartH - (val / maxVal) * chartH;
@@ -230,27 +183,27 @@ function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPicke
           })}
 
           <line x1={PAD_L} y1={thresholdY} x2={W-PAD_R} y2={thresholdY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
-          {targetX !== null && (
-            <g>
-              <line x1={targetX} y1={PAD_T} x2={targetX} y2={PAD_T + chartH} stroke="#7c3aed" strokeWidth="2" strokeDasharray="6,4" opacity="0.9" />
-              <rect x={targetX - 24} y={PAD_T - 18} width={48} height={16} rx="4" fill="#7c3aed" opacity="0.9" />
-              <text x={targetX} y={PAD_T - 7} textAnchor="middle" fontSize="10" fontWeight="900" fill="#fff">{targetTime}</text>
-            </g>
-          )}
-          <path d={dPath} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          
+          <g clipPath="url(#chart-area-clip)">
+            <path d={areaD} fill="url(#lineGradient)" opacity="0.15" />
+            <path d={dPath} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
 
-          {points.map((p: any, i: number) => {
-            const showLabel = timeRange === "Hour"
-              ? riskTrends[i].showLabel === true
-              : i % labelStep === 0 || i === points.length - 1;
-            return (
-              <g key={`pt-${i}`}>
-                {timeRange !== "Hour" && <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />}
-                {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
-                {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
-              </g>
-            );
-          })}
+            {points.map((p: any, i: number) => {
+              if (!p.inView) return null; 
+              
+              const showLabel = timeRange === "Hour"
+                ? riskTrends[i].showLabel === true
+                : i % labelStep === 0 || i === points.length - 1;
+              
+              return (
+                <g key={`pt-${i}`} className="group">
+                  {/* Removed circles and tooltips, keeping only the axis tick lines and labels */}
+                  {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
+                  {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
+                </g>
+              );
+            })}
+          </g>
 
           <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
           <line x1={PAD_L} y1={PAD_T + chartH} x2={W-PAD_R} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
@@ -267,12 +220,15 @@ function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPicke
           <text x={25} y={PAD_T + chartH / 2} transform={`rotate(-90 25 ${PAD_T + chartH / 2})`} textAnchor="middle" fontSize="12" className="fill-slate-400 font-black uppercase tracking-[0.2em]">Risk Score</text>
         </svg>
         {isZoomed && (
-          <div ref={scrubRef} className="mx-10 mb-3 h-2 bg-slate-100 rounded-full relative cursor-pointer">
-            <div
-              className="absolute top-0 h-full bg-blue-400 rounded-full hover:bg-blue-500 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
-              style={{ left: `${(vb.x / W) * 100}%`, width: `${(vb.w / W) * 100}%` }}
-              onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
-            />
+          <div className="mx-10 mb-2 space-y-1">
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Drag to pan timeline:</p>
+            <div ref={scrubRef} className="h-2.5 bg-gradient-to-r from-slate-100 to-slate-50 rounded-full relative cursor-pointer border border-slate-200 shadow-sm">
+              <div
+                className="absolute top-0 h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full hover:from-blue-500 hover:to-blue-600 cursor-grab active:cursor-grabbing transition-colors shadow-md"
+                style={{ left: `${(vb.x / W) * 100}%`, width: `${(vb.w / W) * 100}%` }}
+                onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -346,16 +302,12 @@ function HorizontalBarChart({ distractions }: { distractions: any[] }) {
   );
 }
 
-/* ─── Main Component ─── */
+/* ΓöÇΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇ */
 
 export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; deviceSerial: string }) {
   const [mounted, setMounted] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
-<<<<<<< HEAD
-  const [timeRange, setTimeRange] = useState<"Hour" | "Day" | "Week" | "Month">("Week");
-=======
   const [picker, setPicker] = useState<PickerValue>({ startDate:null, endDate:null, timeframe:"week", hour:null });
->>>>>>> a06cd12c920123c65a27bb8e8fc60e6698ee42b0
   const [thresholdScore, setThresholdScore] = useState(15);
 
   const { startDate, endDate, timeframe: selectedTimeframe, hour: selectedHour } = picker;
@@ -376,13 +328,38 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
         const { API_ENDPOINTS, COMMON_HEADERS, getDriverAuthToken } = await import("@/lib/api-config");
         const token = getDriverAuthToken();
         
-        // Append dynamic filters to the endpoint
+        // Build target_date based on timeframe
+        // Build target_date based on timeframe
+        let targetDate = "";
+        if (startDate) {
+          // Extract local date components to avoid UTC timezone shifts 
+          // (which causes June 1st to roll backward into May)
+          const year = startDate.getFullYear();
+          const month = String(startDate.getMonth() + 1).padStart(2, "0"); // +1 because months are 0-indexed
+          const day = String(startDate.getDate()).padStart(2, "0");
+          
+          const localDateStr = `${year}-${month}-${day}`;
+
+          if (selectedTimeframe.toLowerCase() === "hour") {
+            // Format: YYYY-MM-DD HH (e.g., 2026-06-05 18)
+            if (selectedHour !== null) {
+              const hourStr = String(selectedHour).padStart(2, "0");
+              targetDate = `${localDateStr} ${hourStr}`;
+            }
+          } else if (selectedTimeframe.toLowerCase() === "month") {
+            // Format: YYYY-MM (e.g., 2026-06)
+            targetDate = `${year}-${month}`;
+          } else if (selectedTimeframe.toLowerCase() === "day" || selectedTimeframe.toLowerCase() === "week") {
+            // Format: YYYY-MM-DD (e.g., 2026-06-05)
+            targetDate = localDateStr;
+          }
+        }
+        
+        // Build URL with correct parameters
         const url = new URL(API_ENDPOINTS.DRIVER_DASHBOARD_DETAILS);
-        url.searchParams.append("timeframe", selectedTimeframe);
+        url.searchParams.append("timeframe", selectedTimeframe.toLowerCase());
+        if (targetDate) url.searchParams.append("target_date", targetDate);
         url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
-        if (startDate)           url.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
-        if (endDate)             url.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
-        if (selectedHour !== null) url.searchParams.append("hour", String(selectedHour));
 
         const res = await fetch(url.toString(), {
           headers: {
@@ -394,16 +371,27 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
       } catch (err) { console.error(err); }
     }
     fetchReport();
-  }, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
+  }, [selectedTimeframe, debouncedThreshold, startDate, selectedHour]);
 
   if (!mounted) return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-[0.3em]">Decoding Telemetry...</div>;
 
-  // ── Pull nested sections from API response ────────────────────────────
+  // ========== Pull nested sections from API response ==========
   const profile  = reportData?.profile  ?? null;
-  const apiStats = reportData?.stats    ?? null;
+  const apiStats = reportData?.summary_report ?? reportData?.stats ?? null;
   const analysis = reportData?.analysis ?? null;
+  
+  // Build daily_report from summary_report if not present
+  const dr = analysis?.daily_report ?? (apiStats ? {
+    total_drive_time_mins: apiStats.total_drive_time_mins,
+    total_driving_time: apiStats.total_drive_time_mins ? apiStats.total_drive_time_mins / 60 : undefined,
+    safe_driving_time: apiStats.total_safe_drive_time_mins ? apiStats.total_safe_drive_time_mins / 60 : undefined,
+    avg_driver_score: apiStats.avg_driver_score ? Math.round(apiStats.avg_driver_score * 100) : undefined,
+    percentile_95th: apiStats.percentile_95th ? Math.round(apiStats.percentile_95th * 100) : undefined,
+    event_ratio: apiStats.event_ratio,
+    significance: apiStats.significance,
+  } : null);
 
-  // ── Risk Projection Graph  (analysis.trend_chart) ─────────────────────
+  // ========== Risk Projection Graph (analysis.trend_chart) ==========
   const rawTrend = analysis?.trend_chart ?? null;
   const riskTrends = (() => {
     if (!rawTrend?.length) return [];
@@ -442,7 +430,7 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
     });
   })();
 
-  // ── Distractions (analysis.distractions_split) ────────────────────────
+  // ========== Distractions (analysis.distractions_split) ==========
   const colorPalette = ["#3b82f6", "#ef4444", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
   const rawDistractions = analysis?.distractions_split ?? null;
 
@@ -464,13 +452,12 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
       }))
     : defaultDistractions;
 
-  // ── Daily Report  (analysis.daily_report) ─────────────────────────────
-  const dr = analysis?.daily_report ?? null;
+  // ========== Daily Report Stats ==========
   const significance = dr?.significance ?? null;
 
   const distractionCenterPct =
     dr?.total_driving_time != null && dr?.safe_driving_time != null
-      ? (dr.total_driving_time - dr.safe_driving_time) * 100
+      ? Math.round((dr.total_driving_time - dr.safe_driving_time) / dr.total_driving_time * 100)
       : undefined;
   
   const reportStats = [
@@ -506,10 +493,10 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
         <div class="stats-grid">
           <table style="border:none; width:auto; border-collapse: separate; border-spacing: 15px;">
             <tr>
-              <td class="stat-box"><div class="stat-label">Safety Score</div><div class="stat-value">${apiStats?.score ?? "–"}%</div></td>
-              <td class="stat-box"><div class="stat-label">Total Trips</div><div class="stat-value">${apiStats?.total_trips ?? "–"}</div></td>
-              <td class="stat-box"><div class="stat-label">Safe Hours</div><div class="stat-value">${apiStats?.safe_hours ?? "–"}</div></td>
-              <td class="stat-box"><div class="stat-label">Alerts</div><div class="stat-value">${apiStats?.alerts ?? "–"}</div></td>
+              <td class="stat-box"><div class="stat-label">Safety Score</div><div class="stat-value">${apiStats?.score ?? "ΓÇô"}%</div></td>
+              <td class="stat-box"><div class="stat-label">Total Trips</div><div class="stat-value">${apiStats?.total_trips ?? "ΓÇô"}</div></td>
+              <td class="stat-box"><div class="stat-label">Safe Hours</div><div class="stat-value">${apiStats?.safe_hours ?? "ΓÇô"}</div></td>
+              <td class="stat-box"><div class="stat-label">Alerts</div><div class="stat-value">${apiStats?.alerts ?? "ΓÇô"}</div></td>
             </tr>
           </table>
         </div>
@@ -561,11 +548,11 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
               {profile?.driver_name ?? "Personnel Dossier"}
             </h1>
             <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ring-1 ${
-              (apiStats?.score ?? 0) >= 85
+              (apiStats?.score ?? 0) >= 0.85
                 ? "bg-emerald-50 text-emerald-600 ring-emerald-100"
                 : "bg-rose-50 text-rose-600 ring-rose-100"
             }`}>
-              {(apiStats?.score ?? 0) >= 85 ? "Elite Standing" : "Review Status"}
+              {(apiStats?.score ?? 0) >= 0.85 ? "Elite Standing" : "Review Status"}
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 text-[11px] font-bold text-slate-400 uppercase tracking-[0.15em]">
@@ -648,12 +635,12 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
         </div>
       </div>
 
-      {/* Quick Access Info — live from stats */}
+      {/* Quick Access Info – live from stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { icon: <Route className="text-blue-500" />,         label: "Safety Score",  val: apiStats?.score       !== undefined ? `${apiStats.score}%`               : "–" },
+          { icon: <Route className="text-blue-500" />,         label: "Safety Score",  val: apiStats?.score       !== undefined ? `${Math.round(apiStats.score * 100)}%`               : "–" },
           { icon: <MapPin className="text-blue-500" />,        label: "Total Trips",   val: apiStats?.total_trips !== undefined ? `${apiStats.total_trips} Trips`      : "–" },
-          { icon: <Clock className="text-blue-500" />,         label: "Safe Hours",    val: apiStats?.safe_hours  !== undefined ? `${apiStats.safe_hours} Hrs`         : "–" },
+          { icon: <Clock className="text-blue-500" />,         label: "Safe Hours",    val: apiStats?.total_safe_drive_time_mins !== undefined ? `${Math.round(apiStats.total_safe_drive_time_mins / 60)} Hrs` : "–" },
           { icon: <AlertTriangle className="text-blue-500" />, label: "Alerts Today",  val: apiStats?.alerts      !== undefined ? `${apiStats.alerts} Alert${apiStats.alerts !== 1 ? "s" : ""}` : "–" },
         ].map(i => (
           <div key={i.label} className="bg-white/50 border border-blue-50 rounded-2xl p-4 flex items-center gap-4">

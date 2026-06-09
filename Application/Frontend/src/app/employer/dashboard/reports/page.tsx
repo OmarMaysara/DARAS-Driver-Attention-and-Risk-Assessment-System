@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { EmployerDashboardShell } from "../employer-dashboard-shell";
@@ -26,7 +26,7 @@ function grade(s: number) {
   return             { label: "Critical", color: "#93c5fd", bg: "rgba(147,197,253,.15)", text: "#3b82f6" };
 }
 
-/* ── Line Chart (fleet avg risk over time) ── */
+/* ΓöÇΓöÇ Line Chart (fleet avg risk over time) ΓöÇΓöÇ */
 function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThreshold }: {
   trendChart: any[];
   picker: PickerValue;
@@ -37,7 +37,7 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
   const { startDate, endDate } = picker;
   const W = 1000, H = 250;
 
-  /* ── Zoom ───────────────────────────────────────────── */
+  /* ΓöÇΓöÇ Zoom ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
   const svgRef   = useRef<SVGSVGElement>(null);
   const scrubRef = useRef<HTMLDivElement>(null);
   const vbRef    = useRef({ x: 0, y: 0, w: W, h: H });
@@ -74,7 +74,7 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
   }
 
   function resetZoom() { const r={x:0,y:0,w:W,h:H}; vbRef.current=r; setVb(r); }
-  /* ────────────────────────────────────────────────────── */
+  /* ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   const parsedTrends = trendChart && trendChart.length > 0 ? trendChart : [];
   
@@ -111,12 +111,12 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
         </div>
         <div className="flex items-center gap-1.5">
           <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-            <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">−</button>
+            <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">ΓêÆ</button>
             <span className="text-[9px] font-black text-slate-400 w-9 text-center tabular-nums">{zoomPct}%</span>
             <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">+</button>
           </div>
           {isZoomed && (
-            <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">↺ Reset</button>
+            <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">Γå║ Reset</button>
           )}
         </div>
       </div>
@@ -243,7 +243,7 @@ function FleetDistractionsDonut({ distractions }: { distractions: any[] }) {
 }
 
 
-/* ── Driver Score Bar Chart ── */
+/* ΓöÇΓöÇ Driver Score Bar Chart ΓöÇΓöÇ */
 function DriverScoreBars({ employees }: { employees: Employee[] }) {
   const sorted = [...employees].sort((a, b) => b.safetyScore - a.safetyScore).slice(0, 6);
   if (sorted.length === 0) return <div className="text-center text-slate-400 text-xs font-bold py-10">No drivers ranked yet.</div>;
@@ -275,7 +275,7 @@ function DriverScoreBars({ employees }: { employees: Employee[] }) {
   );
 }
 
-/* ── Main Page ── */
+/* ΓöÇΓöÇ Main Page ΓöÇΓöÇ */
 export default function ReportsPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -375,7 +375,7 @@ export default function ReportsPage() {
       <table><thead><tr><th>Rank</th><th>Driver</th><th>Score</th><th>Trips</th><th>Incidents</th><th>Status</th></tr></thead><tbody>
       ${sorted.map((e,i) => { const g=grade(e.safetyScore); return `<tr><td>#${i+1}</td><td><b>${e.name}</b></td><td style="color:${g.color};font-weight:700">${e.safetyScore}</td><td>${e.trips}</td><td>${e.incidents}</td><td><span class="pill" style="background:${g.bg};color:${g.text}">${g.label}</span></td></tr>`; }).join("")}
       </tbody></table>
-      <div class='footer'>© 2026 DARAS Fleet Intelligence · Confidential</div>
+      <div class='footer'>┬⌐ 2026 DARAS Fleet Intelligence ┬╖ Confidential</div>
     </body></html>`;
     const blob = new Blob(["\ufeff", html], { type: "application/msword" });
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `daras-fleet-${new Date().toISOString().slice(0,10)}.doc` });
@@ -393,7 +393,7 @@ export default function ReportsPage() {
 
       <main style={{ maxWidth: 1200, margin: "0 auto", width: "100%", padding: "40px 24px 80px", flex: 1 }}>
 
-        {/* ── Header ── */}
+        {/* ΓöÇΓöÇ Header ΓöÇΓöÇ */}
         <div className="bg-white rounded-[2rem] border border-blue-50 shadow-sm px-8 py-5 flex items-center justify-between mb-6 fp">
           <div className="flex items-center gap-5">
             <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-md shadow-blue-200">
@@ -409,7 +409,7 @@ export default function ReportsPage() {
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{displayStats.totalDrivers} Drivers</span>
-                <span className="text-slate-300">•</span>
+                <span className="text-slate-300">ΓÇó</span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Avg Score: <span style={{ color: displayStats.statusColor }}>{displayStats.avgSafetyScore}</span>
                 </span>
@@ -430,15 +430,15 @@ export default function ReportsPage() {
           </div>
         ) : (
           <>
-            {/* ── Line Chart Card ── */}
+            {/* ΓöÇΓöÇ Line Chart Card ΓöÇΓöÇ */}
             <div className="bg-white rounded-[1.5rem] border border-blue-50 shadow-sm mb-6 overflow-hidden fp" style={{ height: 280 }}>
               <FleetLineChart trendChart={fleetAnalysis?.trend_chart || []} picker={picker} onPickerChange={setPicker} threshold={thresholdScore} setThreshold={setThresholdScore} />
             </div>
 
-            {/* ── 3 Bottom Panels ── */}
+            {/* ΓöÇΓöÇ 3 Bottom Panels ΓöÇΓöÇ */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-              {/* Panel 1 – Fleet Stats */}
+              {/* Panel 1 ΓÇô Fleet Stats */}
               <div className="bg-white rounded-[1.5rem] border border-blue-50 shadow-sm p-6 flex flex-col fp">
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-1.5 h-4 bg-blue-500 rounded-full" />
@@ -464,7 +464,7 @@ export default function ReportsPage() {
                 </div>
               </div>
               
-              {/* Panel 2 – Distractions Split Donut */}
+              {/* Panel 2 ΓÇô Distractions Split Donut */}
               <div className="bg-white rounded-[1.5rem] border border-blue-50 shadow-sm p-6 flex flex-col fp">
                 <div className="flex items-center gap-2 mb-3 z-10">
                   <div className="w-1.5 h-4 bg-rose-500 rounded-full" />
@@ -476,7 +476,7 @@ export default function ReportsPage() {
               </div>
 
 
-              {/* Panel 4 – Driver Score Bars */}
+              {/* Panel 4 ΓÇô Driver Score Bars */}
               <div className="bg-white rounded-[1.5rem] border border-blue-50 shadow-sm p-6 flex flex-col fp">
                 <div className="flex items-center gap-2 mb-4 z-10">
                   <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
