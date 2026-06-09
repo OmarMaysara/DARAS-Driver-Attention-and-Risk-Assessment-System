@@ -453,6 +453,7 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
     : defaultDistractions;
 
   // ========== Daily Report Stats ==========
+  // ========== Daily Report Stats ==========
   const significance = dr?.significance ?? null;
 
   const distractionCenterPct =
@@ -460,6 +461,8 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
       ? Math.round((dr.total_driving_time - dr.safe_driving_time) / dr.total_driving_time * 100)
       : undefined;
   
+  const fmt = (val: number | undefined | null) => val != null ? `${Math.round(val * 100)}%` : "–";
+
   const reportStats = [
     { label: "Total Trips",            value: dr?.total_trips             !== undefined ? `${dr.total_trips} Trips`                                          : "–" },
     { label: "Total Drive Time",       value: dr?.total_drive_time_mins   !== undefined ? `${dr.total_drive_time_mins} Min`                                  : "– Min" },
