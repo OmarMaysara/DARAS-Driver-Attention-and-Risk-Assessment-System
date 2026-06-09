@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
+import { DateRangePicker, type PickerValue } from "@/app/components/date-range-picker";
 import { createPortal } from "react-dom";
 import { type Employee } from "../employer-session";
 
@@ -14,8 +15,52 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const [mounted, setMounted] = useState(false);
   const [thresholdScore, setThresholdScore] = useState(15);
   const [debouncedThreshold, setDebouncedThreshold] = useState(15);
-  const [timeRange, setTimeRange] = useState<"Day" | "Week" | "Month">("Week");
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [picker, setPicker] = useState<PickerValue>({ startDate:null, endDate:null, timeframe:"week", hour:null });
+
+  const { startDate, endDate, timeframe: selectedTimeframe, hour: selectedHour } = picker;
+  const timeRange = (selectedTimeframe.charAt(0).toUpperCase() + selectedTimeframe.slice(1)) as "Hour"|"Day"|"Week"|"Month";
+
+  function handleDateRangeChange(v: PickerValue) { setPicker(v); }
+
+  /* ── Chart zoom (outer level — survives threshold/date re-renders) ── */
+  const CHART_W = 1000, CHART_H = 250;
+  const svgRef   = useRef<SVGSVGElement>(null);
+  const scrubRef = useRef<HTMLDivElement>(null);
+  const vbRef    = useRef({ x: 0, y: 0, w: CHART_W, h: CHART_H });
+  const [vb, setVb] = useState({ x: 0, y: 0, w: CHART_W, h: CHART_H });
+  const scrubDrag = useRef<{ sx: number; ox: number } | null>(null);
+  const isZoomed  = vb.w < CHART_W * 0.99;
+  const zoomPct   = Math.round(CHART_W / vb.w * 100);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!scrubDrag.current || !scrubRef.current) return;
+      const rect = scrubRef.current.getBoundingClientRect();
+      const { w } = vbRef.current;
+      const dx = (e.clientX - scrubDrag.current.sx) / rect.width * CHART_W;
+      const next = { ...vbRef.current, x: Math.max(0, Math.min(CHART_W - w, scrubDrag.current.ox + dx)) };
+      vbRef.current = next; setVb(next);
+    }
+    function onUp() { scrubDrag.current = null; }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
+  function zoomBy(factor: number) {
+    const { x, y, w, h } = vbRef.current;
+    const newW = Math.max(150, Math.min(CHART_W, w * factor));
+    const newH = newW * (CHART_H / CHART_W);
+    const next = {
+      x: Math.max(0, Math.min(CHART_W - newW, (x + w/2) - newW/2)),
+      y: Math.max(0, Math.min(CHART_H - newH, (y + h/2) - newH/2)),
+      w: newW, h: newH,
+    };
+    vbRef.current = next; setVb(next);
+  }
+
+  function resetZoom() { const r={x:0,y:0,w:CHART_W,h:CHART_H}; vbRef.current=r; setVb(r); }
+  /* ─────────────────────────────────────────────────────────────────── */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reportData, setReportData] = useState<any>(null);
 
@@ -40,8 +85,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         const { getEmployerAuthToken, API_ENDPOINTS, COMMON_HEADERS } = await import("@/lib/api-config");
         const token = getEmployerAuthToken();
         const baseUrl = new URL(API_ENDPOINTS.DRIVER_DETAILS(employee.email || "unknown"));
-        baseUrl.searchParams.append("timeframe", timeRange.toLowerCase());
+        baseUrl.searchParams.append("timeframe", selectedTimeframe);
         baseUrl.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+        if (startDate)             baseUrl.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
+        if (endDate)               baseUrl.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
+        if (selectedHour !== null) baseUrl.searchParams.append("hour", String(selectedHour));
         
         const res = await fetch(baseUrl.toString(), {
           headers: {
@@ -59,41 +107,50 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     }
     
     fetchReport();
-  }, [employee.email, debouncedThreshold, timeRange]);
+  }, [employee.email, debouncedThreshold, selectedTimeframe, startDate, endDate, selectedHour]);
 
   if (!mounted) return null;
 
   // --- Dynamic Data based on employee or fetched report ---
   const analysis = reportData?.analysis;
   
-  // Use fetched risk trends if available, else fallback
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let riskTrends = analysis?.trend_chart?.map((t: any) => ({
-    label: t.name ? t.name.charAt(0) + t.name.slice(1).toLowerCase() : "Day",
-    score: t.score || 0
-  })) || reportData?.trend_chart?.map((t: any) => ({
-    label: t.name ? t.name.charAt(0) + t.name.slice(1).toLowerCase() : "Day",
-    score: t.score || 0
-  })) || reportData?.risk_trends || reportData?.riskTrends;
-  
-  if (!riskTrends) {
-    if (timeRange === "Day") {
-      riskTrends = [
-        { label: "8am", score: 92 }, { label: "10am", score: 88 }, { label: "12pm", score: 95 },
-        { label: "2pm", score: 84 }, { label: "4pm", score: 89 }, { label: "6pm", score: 91 },
-      ];
-    } else if (timeRange === "Month") {
-      riskTrends = [
-        { label: "W1", score: 85 }, { label: "W2", score: 89 },
-        { label: "W3", score: 94 }, { label: "W4", score: 91 },
-      ];
-    } else {
-      riskTrends = [
-        { label: "Mon", score: 92 }, { label: "Tue", score: 88 }, { label: "Wed", score: 95 },
-        { label: "Thu", score: 84 }, { label: "Fri", score: 89 }, { label: "Sat", score: 91 }, { label: "Sun", score: 94 },
-      ];
+  const riskTrends = (() => {
+    const raw = analysis?.trend_chart ?? reportData?.trend_chart ?? [];
+    if (!raw.length) return [];
+
+    if (timeRange === "Hour") {
+      const seen = new Set<string>();
+      return raw.map((t: any) => {
+        const [datePart, timePart] = (t.timestamp ?? "").split(" ");
+        const [hh, mm] = (timePart ?? "00:00").split(":");
+        const label = `${hh}:${mm}`;
+        const minNum = parseInt(mm ?? "0", 10);
+        const key = `${datePart} ${hh}:${mm}`;
+        let showLabel = false;
+        if (minNum % 5 === 0 && !seen.has(key)) {
+          seen.add(key);
+          showLabel = true;
+        }
+        return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel };
+      });
     }
-  }
+
+    const timestamps: string[] = raw.map((t: any) => t.timestamp ?? "");
+    const uniqueDates = new Set(timestamps.map((ts: string) => ts.split(" ")[0]));
+    const multiDay = uniqueDates.size > 1 || timeRange === "Week" || timeRange === "Month";
+    return raw.map((t: any) => {
+      const [datePart, timePart] = (t.timestamp ?? "").split(" ");
+      let label = "–";
+      if (!multiDay && timePart) {
+        label = timePart.substring(0, 5);
+      } else if (datePart) {
+        const d = new Date(datePart);
+        const mon = d.toLocaleDateString("en-US", { month: "short" });
+        label = (timePart && timeRange !== "Week") ? `${mon} ${d.getDate()} ${timePart.substring(0, 5)}` : `${mon} ${d.getDate()}`;
+      }
+      return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel: true };
+    });
+  })();
 
   const defaultDistractions = [
     { type: "Phone call", value: 35, color: "#3b82f6", duration: 420 },
@@ -137,74 +194,85 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     const chartW = W - PAD_L - PAD_R;
     const chartH = H - PAD_T - PAD_B;
     
-    // Convert safety score (0-100) to a risk factor (0-1) for the chart
-    // 92 -> risk 0.08
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = riskTrends.map((d: any) => (100 - d.score) / 100);
     const threshold = thresholdScore / 100;
-    const maxData = Math.max(...data, threshold);
+    const maxData = data.length > 0 ? Math.max(...data, threshold) : threshold;
     const maxVal = maxData > 0.5 ? 1.0 : (maxData > 0.3 ? 0.5 : 0.3);
     const thresholdY = PAD_T + chartH - (threshold / maxVal) * chartH;
 
     const points = data.map((val: number, i: number) => {
-      const x = PAD_L + (i / (data.length - 1)) * chartW;
+      const x = data.length > 1
+        ? PAD_L + (i / (data.length - 1)) * chartW
+        : PAD_L + chartW / 2;
       const y = PAD_T + chartH - (val / maxVal) * chartH;
       return { x, y, label: riskTrends[i].label };
     });
 
+    const labelStep = Math.max(1, Math.ceil(points.length / 8));
+
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const d = points.reduce((acc: string, p: any, i: number) => 
+    const d = points.reduce((acc: string, p: any, i: number) =>
       i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ""
     );
 
-    const areaD = `${d} L ${points[points.length-1].x} ${PAD_T + chartH} L ${points[0].x} ${PAD_T + chartH} Z`;
+    const areaD = points.length > 0
+      ? `${d} L ${points[points.length-1].x} ${PAD_T + chartH} L ${points[0].x} ${PAD_T + chartH} Z`
+      : "";
+
+    if (data.length === 0) {
+      return (
+        <div className="relative w-full h-full flex flex-col pt-4 min-h-0">
+          <div className="flex items-center gap-2 px-4 sm:px-10 shrink-0">
+            <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Risk Projection</span>
+            <DateRangePicker {...picker} onChange={handleDateRangeChange} />
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center gap-2">
+            <span className="text-slate-300 text-4xl">📊</span>
+            <span className="text-slate-400 text-[13px] font-bold uppercase tracking-widest">No data for this period</span>
+            <span className="text-slate-300 text-[10px] font-medium">Pick a date range above to load trip data</span>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="relative w-full h-full flex flex-col pt-4 min-h-0">
         <div className="flex flex-col sm:flex-row justify-between items-center px-4 sm:px-10 gap-4 sm:gap-0 shrink-0">
            <div className="flex items-center gap-2 relative">
              <span className="text-[10px] font-black text-blue-900/40 uppercase tracking-[0.2em]">Risk Projection</span>
-             <div className="relative">
-                <div 
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100 flex items-center gap-1 cursor-pointer hover:bg-blue-100 transition-colors"
-                >
-                  This {timeRange} <ChevronDown size={10} />
-                </div>
-               {isDropdownOpen && (
-                 <div className="absolute top-full left-0 mt-1 w-24 bg-white border border-blue-100 rounded-lg shadow-lg overflow-hidden z-50 animate-fade-in">
-                   {["Day", "Week", "Month"].map(r => (
-                     <div 
-                       key={r} 
-                       className="px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-blue-50 hover:text-blue-600 cursor-pointer"
-                       onClick={() => { setTimeRange(r as "Day" | "Week" | "Month"); setIsDropdownOpen(false); }}
-                     >
-                       This {r}
-                     </div>
-                   ))}
-                 </div>
-               )}
-             </div>
+             <DateRangePicker {...picker} onChange={handleDateRangeChange} />
            </div>
            <div className="flex items-center gap-3 bg-rose-50 px-4 py-1.5 rounded-full border border-rose-100">
              <label htmlFor="threshold-slider" className="text-[10px] font-black text-rose-500 uppercase tracking-widest whitespace-nowrap">
                Threshold = {thresholdScore}%
              </label>
-             <input 
+             <input
                id="threshold-slider"
-               type="range" 
-               min="0" 
-               max="100" 
+               type="range"
+               min="0"
+               max="100"
                step="1"
                value={thresholdScore}
                onChange={(e) => setThresholdScore(Number(e.target.value))}
                className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
              />
            </div>
+           <div className="flex items-center gap-1.5">
+             <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
+               <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">−</button>
+               <span className="text-[9px] font-black text-slate-400 w-9 text-center tabular-nums">{zoomPct}%</span>
+               <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">+</button>
+             </div>
+             {isZoomed && (
+               <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">↺ Reset</button>
+             )}
+           </div>
         </div>
-        
+
         <div className="relative flex-1 w-full mt-4 min-h-0">
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
+          <svg ref={svgRef} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
             {/* Area under the line */}
             <defs>
               <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
@@ -224,19 +292,24 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
             {/* Threshold Line */}
             <line x1={PAD_L} y1={thresholdY} x2={W-PAD_R} y2={thresholdY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
-            
+
+
             {/* Data Line */}
             <path d={d} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
 
             {/* Points and X-axis Labels */}
-            {points.map((p: {x: number, y: number, label: string}, i: number) => (
-              <g key={`pt-${i}`}>
-                <circle cx={p.x} cy={p.y} r="5" fill="#white" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />
-                {/* Small tick mark on the X axis */}
-                <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />
-                <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>
-              </g>
-            ))}
+            {points.map((p: {x: number, y: number, label: string}, i: number) => {
+              const showLabel = timeRange === "Hour"
+                ? (riskTrends[i] as any).showLabel === true
+                : i % labelStep === 0 || i === points.length - 1;
+              return (
+                <g key={`pt-${i}`}>
+                  {timeRange !== "Hour" && <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />}
+                  {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
+                  {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
+                </g>
+              );
+            })}
 
             {/* Y Axis Line */}
             <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
@@ -260,6 +333,15 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
               Risk Score
             </text>
           </svg>
+          {isZoomed && (
+            <div ref={scrubRef} className="mx-10 mb-3 h-2 bg-slate-100 rounded-full relative cursor-pointer">
+              <div
+                className="absolute top-0 h-full bg-blue-400 rounded-full hover:bg-blue-500 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
+                style={{ left: `${(vb.x/CHART_W)*100}%`, width: `${(vb.w/CHART_W)*100}%` }}
+                onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+              />
+            </div>
+          )}
         </div>
       </div>
     );
@@ -270,6 +352,10 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     let currentAngle = -Math.PI / 2;
     const cx = 150, cy = 150, R = 90, r = 35;
     const total = allDistractions.reduce((sum, d) => sum + d.value, 0);
+    const centerPct =
+      dr?.total_driving_time != null && dr?.safe_driving_time != null
+        ? ((dr.total_driving_time - dr.safe_driving_time) * 100).toFixed(2)
+        : total;
 
     return (
       <div className="relative w-full h-full flex items-center justify-center">
@@ -325,7 +411,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
              );
           })}
           {/* Center text */}
-          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{total}%</text>
+          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{centerPct}%</text>
         </svg>
       </div>
     );
