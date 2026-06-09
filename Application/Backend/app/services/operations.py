@@ -28,6 +28,39 @@ def _calculate_rms_score(scores: list[float]) -> float:
         return 0.0
     return math.sqrt(sum(s ** 2 for s in scores) / len(scores))
 
+def _calculate_statistical_significance(base_chart: list[dict], baseline_threshold: float = 0.5) -> str:
+    """
+    Calculates the statistical significance of the risk trend against a baseline.
+    Uses a Z-test to compute the confidence interval and determine if the 
+    score deviation is mathematically significant.
+    """
+    n = len(base_chart)
+    if n < 5: 
+        return "Insufficient Data for Significance"
+        
+    scores = [point["score"] for point in base_chart]
+    mean_score = sum(scores) / n
+    
+    variance = sum((x - mean_score) ** 2 for x in scores) / (n - 1)
+    std_dev = math.sqrt(variance)
+    
+    if std_dev == 0:
+        if mean_score > baseline_threshold:
+            return "Significantly High Risk (p < 0.05)"
+        elif mean_score < baseline_threshold:
+            return "Significantly Safe (p < 0.05)"
+        else:
+            return "Insignificant Deviation (p > 0.05)"
+            
+    z_score = (mean_score - baseline_threshold) / (std_dev / math.sqrt(n))
+    
+    if z_score > 1.96:
+        return "Significantly High Risk (p < 0.05)"
+    elif z_score < -1.96:
+        return "Significantly Safe (p < 0.05)"
+    else:
+        return "Insignificant Deviation (p > 0.05)"
+
 def _get_default_target_date(timeframe: str) -> str:
     """Determines the default target date string based on the given timeframe."""
     now = datetime.now()
@@ -323,8 +356,8 @@ def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, targe
     display_chart = _generate_display_chart(readings, base_chart, timeframe)
     distractions_split = _calculate_distractions_split(readings)
     
-    alerts = sum(1 for point in base_chart if point["score"] > threshold)
-    event_ratio = alerts / len(base_chart) if base_chart else 0.0
+    alerts = sum(1 for r in readings if r.risk_score > threshold)
+    event_ratio = alerts / len(readings) if readings else 0.0
     
     total_drive_time_mins = round(sum(d["duration_minutes"] for d in distractions_split), 2)
     safe_time = sum(d["duration_minutes"] for d in distractions_split if d["name"] == "Safe Driving")
@@ -337,7 +370,10 @@ def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, targe
     rms_fleet_score = _calculate_rms_score(driver_scores)
     rms_road_score = _calculate_rms_score(road_scores)
     rms_risk_score = _calculate_rms_score(risk_scores)
-    p95_risk = sorted(risk_scores)[int(len(risk_scores) * 0.95)]
+    
+    sorted_risks = sorted(risk_scores)
+    p95_index = max(0, int(math.ceil(0.95 * len(sorted_risks))) - 1)
+    p95_risk = sorted_risks[p95_index] if sorted_risks else 0.0
 
     summary_report = {
         "total_employees": len(drivers),
@@ -352,7 +388,7 @@ def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, targe
         "avg_risk_score": round(rms_risk_score, 2),
         "percentile_95th": round(p95_risk, 2),
         "event_ratio": round(event_ratio, 2),
-        "significance": "High Risk Fleet" if rms_risk_score > 0.5 else "Safe Fleet"
+        "significance": _calculate_statistical_significance(base_chart, baseline_threshold=0.5)
     }
 
     return {
@@ -389,8 +425,8 @@ def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: i
     display_chart = _generate_display_chart(readings, base_chart, timeframe)
     distractions_split = _calculate_distractions_split(readings)
     
-    alerts = sum(1 for point in base_chart if point["score"] > threshold)
-    event_ratio = alerts / len(base_chart) if base_chart else 0.0
+    alerts = sum(1 for r in readings if r.risk_score > threshold)
+    event_ratio = alerts / len(readings) if readings else 0.0
     
     total_drive_time_mins = round(sum(d["duration_minutes"] for d in distractions_split), 2)
     safe_time = sum(d["duration_minutes"] for d in distractions_split if d["name"] == "Safe Driving")
@@ -403,7 +439,10 @@ def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: i
     rms_driver_score = _calculate_rms_score(driver_scores)
     rms_road_score = _calculate_rms_score(road_scores)
     rms_risk_score = _calculate_rms_score(risk_scores)
-    p95_risk = sorted(risk_scores)[int(len(risk_scores) * 0.95)]
+    
+    sorted_risks = sorted(risk_scores)
+    p95_index = max(0, int(math.ceil(0.95 * len(sorted_risks))) - 1)
+    p95_risk = sorted_risks[p95_index] if sorted_risks else 0.0
 
     summary_report = {
         "total_trips": len(journeys),
@@ -415,7 +454,7 @@ def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: i
         "avg_risk_score": round(rms_risk_score, 2),
         "percentile_95th": round(p95_risk, 2),
         "event_ratio": round(event_ratio, 2),
-        "significance": "Not Safe" if rms_risk_score > 0.5 else "Safe"
+        "significance": _calculate_statistical_significance(base_chart, baseline_threshold=0.5)
     }
 
     return {
@@ -458,8 +497,8 @@ def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, time
     display_chart = _generate_display_chart(readings, base_chart, timeframe)
     distractions_split = _calculate_distractions_split(readings)
     
-    alerts = sum(1 for point in base_chart if point["score"] > threshold)
-    event_ratio = alerts / len(base_chart) if base_chart else 0.0
+    alerts = sum(1 for r in readings if r.risk_score > threshold)
+    event_ratio = alerts / len(readings) if readings else 0.0
     
     total_drive_time_mins = round(sum(d["duration_minutes"] for d in distractions_split), 2)
     safe_time = sum(d["duration_minutes"] for d in distractions_split if d["name"] == "Safe Driving")
@@ -472,7 +511,10 @@ def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, time
     rms_driver_score = _calculate_rms_score(driver_scores)
     rms_road_score = _calculate_rms_score(road_scores)
     rms_risk_score = _calculate_rms_score(risk_scores)
-    p95_risk = sorted(risk_scores)[int(len(risk_scores) * 0.95)]
+    
+    sorted_risks = sorted(risk_scores)
+    p95_index = max(0, int(math.ceil(0.95 * len(sorted_risks))) - 1)
+    p95_risk = sorted_risks[p95_index] if sorted_risks else 0.0
 
     summary_report = {
         "total_trips": len(journeys),
@@ -484,7 +526,7 @@ def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, time
         "avg_risk_score": round(rms_risk_score, 2),
         "percentile_95th": round(p95_risk, 2),
         "event_ratio": round(event_ratio, 2),
-        "significance": "Needs Improvement" if rms_risk_score > 0.5 else "Safe Driving"
+        "significance": _calculate_statistical_significance(base_chart, baseline_threshold=0.5)
     }
 
     return {
