@@ -19,7 +19,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 
 
 # ==========================================
-# INTERNAL HELPER FUNCTIONS (DRY LOGIC)
+# 1. INTERNAL HELPER FUNCTIONS
 # ==========================================
 
 def _calculate_rms_score(scores: list[float]) -> float:
@@ -28,73 +28,154 @@ def _calculate_rms_score(scores: list[float]) -> float:
         return 0.0
     return math.sqrt(sum(s ** 2 for s in scores) / len(scores))
 
-def _calculate_trend_chart(readings, timeframe: str) -> list[dict]:
-    """Generates a trend chart based on the requested timeframe (day, week, month), ensuring all points are returned."""
-    groups = defaultdict(list)
-    
-    # Predefine the expected full range of keys based on the timeframe
-    if timeframe == "day":
-        expected_keys = [str(i) for i in range(24)]
+def _get_default_target_date(timeframe: str) -> str:
+    """Determines the default target date string based on the given timeframe."""
+    now = datetime.now()
+    if timeframe == "hour":
+        return now.strftime("%Y-%m-%d %H")
     elif timeframe == "month":
-        expected_keys = ["Week 1", "Week 2", "Week 3", "Week 4"]
-    else: 
-        # Default to week
-        expected_keys = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+        return now.strftime("%Y-%m")
+    else:
+        return now.strftime("%Y-%m-%d")
 
-    # Populate the available reading data
+def _calculate_trend_chart(readings, timeframe: str) -> list[dict]:
+    """Groups readings by timeframe and calculates the true RMS risk score (Used for Analytics)."""
+    if not readings:
+        return []
+
+    groups = defaultdict(list)
+
     for r in readings:
-        if timeframe == "day":
-            # Group by hour (0 to 23)
-            key = str(r.timestamp.hour)
+        if timeframe == "hour":
+            key = r.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        elif timeframe == "day":
+            key = r.timestamp.strftime("%Y-%m-%d %H:%M")
         elif timeframe == "month":
-            # Group by approximate week of the month, capping at Week 4
-            week_num = min((r.timestamp.day - 1) // 7 + 1, 4)
-            key = f"Week {week_num}"
-        else: 
-            # Group by weekday (MON-SUN)
-            days = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
-            key = days[r.timestamp.weekday()]
+            key = r.timestamp.strftime("%Y-%m-%d %H:00")
+        else:
+            key = r.timestamp.strftime("%Y-%m-%d %H:00")
             
         groups[key].append(r.risk_score)
 
-    chart = []
-    # Build the response using the expected keys to maintain order and populate 0s
-    for key in expected_keys:
-        scores = groups.get(key, [])
-        avg_score = sum(scores) / len(scores) if scores else 0.0
-        chart.append({"name": key, "score": round(avg_score * 100, 1)})
-        
+    chart = [
+        {"timestamp": k, "score": round(_calculate_rms_score(v), 2)} 
+        for k, v in groups.items()
+    ]
+
+    chart.sort(key=lambda x: x["timestamp"])
     return chart
 
-def _calculate_distractions_split(readings, total_drive_time_mins: int) -> list[dict]:
-    """Calculates percentages and actual duration (in minutes) for driver distractions."""
-    if not readings or total_drive_time_mins == 0:
+def _generate_display_chart(readings, base_chart, timeframe: str) -> list[dict]:
+    """Takes the base analytical chart and pads gaps with 0.0 for frontend rendering."""
+    if not readings or not base_chart:
         return []
 
-    distraction_counts = defaultdict(int)
-    total_readings = len(readings)
+    if timeframe == "hour":
+        fmt = "%Y-%m-%d %H:%M:%S"
+        delta = timedelta(seconds=1)
+    elif timeframe == "day":
+        fmt = "%Y-%m-%d %H:%M"
+        delta = timedelta(minutes=1)
+    elif timeframe == "month":
+        fmt = "%Y-%m-%d %H:00"
+        delta = timedelta(hours=1)
+    else:
+        fmt = "%Y-%m-%d %H:00"
+        delta = timedelta(minutes=1)
+
+    min_time = min(r.timestamp for r in readings)
+    max_time = max(r.timestamp for r in readings)
+
+    if timeframe == "hour":
+        curr_time = min_time.replace(microsecond=0)
+        end_time = max_time.replace(microsecond=0)
+    elif timeframe == "day":
+        curr_time = min_time.replace(second=0, microsecond=0)
+        end_time = max_time.replace(second=0, microsecond=0)
+    elif timeframe == "month":
+        curr_time = min_time.replace(minute=0, second=0, microsecond=0)
+        end_time = max_time.replace(minute=0, second=0, microsecond=0)
+    else:
+        curr_time = min_time.replace(second=0, microsecond=0)
+        end_time = max_time.replace(second=0, microsecond=0)
+
+    base_lookup = {item["timestamp"]: item["score"] for item in base_chart}
+    
+    display_chart = []
+    while curr_time <= end_time:
+        key = curr_time.strftime(fmt)
+        if key in base_lookup:
+            display_chart.append({"timestamp": key, "score": base_lookup[key]})
+        else:
+            display_chart.append({"timestamp": key, "score": 0.0})
+        curr_time += delta
+    
+    return display_chart
+
+def _calculate_distractions_split(readings) -> list[dict]:
+    """Calculates percentages and actual duration (in minutes) for driver states using one-hot encoded readings."""
+    if not readings:
+        return []
+
+    state_counts = defaultdict(int)
 
     for r in readings:
         dist_dict = r.driver_distraction_distribution
         if isinstance(dist_dict, dict) and dist_dict:
-            dominant = max(dist_dict, key=dist_dict.get)
-            # Only track actual distractions, ignoring standard safe driving
-            if dominant != "safe_driving": 
-                distraction_counts[dominant.replace("_", " ")] += 1
-                
-    total_distractions = sum(distraction_counts.values())
-    
+            for state, val in dist_dict.items():
+                if val == 1 or val == 1.0:
+                    state_counts[state.replace("_", " ")] += 1
+                    break
+            
+    total_valid_states = sum(state_counts.values())
+            
     return [
         {
-            "name": dt.title(), 
-            "value_percentage": round((count / total_distractions) * 100, 1) if total_distractions > 0 else 0,
-            "duration_minutes": round((count / total_readings) * total_drive_time_mins, 1)
+            "name": state.title(), 
+            "value_percentage": round((count / total_valid_states) * 100, 1) if total_valid_states > 0 else 0.0,
+            "duration_minutes": round(count / 60.0, 2)
         } 
-        for dt, count in distraction_counts.items()
+        for state, count in state_counts.items()
     ]
 
+def _get_driver_journeys(db: Session, driver_id: int, target_date: str = None) -> list[dict]:
+    """Groups continuous split-second telemetry data into distinct physical trips (Journeys)."""
+    readings = crud.get_analytical_scores_for_driver(db, driver_id, target_date=target_date, limit=10000)
+    if not readings: 
+        return []
+
+    readings.sort(key=lambda x: x.timestamp)
+    journeys = []
+    
+    current_journey = {
+        "start_time": readings[0].timestamp,
+        "end_time": readings[0].timestamp,
+        "duration_minutes": 0
+    }
+
+    for i in range(1, len(readings)):
+        prev, curr = readings[i-1], readings[i]
+        
+        if curr.timestamp - prev.timestamp > timedelta(minutes=5):
+            duration = (current_journey["end_time"] - current_journey["start_time"]).total_seconds() / 60
+            current_journey["duration_minutes"] = max(1, int(duration))
+            journeys.append(current_journey)
+            
+            current_journey = {
+                "start_time": curr.timestamp, "end_time": curr.timestamp,
+                "duration_minutes": 0
+            }
+        else:
+            current_journey["end_time"] = curr.timestamp
+
+    duration = (current_journey["end_time"] - current_journey["start_time"]).total_seconds() / 60
+    current_journey["duration_minutes"] = max(1, int(duration))
+    journeys.append(current_journey)
+
+    return journeys
+
 # ==========================================
-# 1. SECURITY & AUTHENTICATION LOGIC
+# 2. SECURITY & AUTHENTICATION
 # ==========================================
 
 def get_password_hash(password: str) -> str:
@@ -130,7 +211,7 @@ def authenticate_driver_email(db: Session, email: str, password: str) -> dict:
     return {"access_token": access_token, "token_type": "bearer", "driver_id": driver.driver_id}
 
 # ==========================================
-# 2. REGISTRATION LOGIC
+# 3. REGISTRATION
 # ==========================================
 
 def handle_register_employer(db: Session, payload: payloads.EmployerCreate) -> entities.Employer:
@@ -150,50 +231,7 @@ def handle_register_driver(db: Session, payload: payloads.DriverCreate) -> entit
     return crud.create_driver(db=db, driver=payload, hashed_password=hashed_pwd)
 
 # ==========================================
-# 3. JOURNEY ENGINE (INTERNAL)
-# ==========================================
-
-def get_driver_journeys(db: Session, driver_id: int) -> list[dict]:
-    """Groups continuous split-second telemetry data into distinct physical trips (Journeys)."""
-    readings = crud.get_analytical_scores_for_driver(db, driver_id, limit=10000)
-    if not readings: 
-        return []
-
-    readings.sort(key=lambda x: x.timestamp)
-    journeys = []
-    
-    current_journey = {
-        "start_time": readings[0].timestamp,
-        "end_time": readings[0].timestamp,
-        "alerts": 0, "duration_minutes": 0
-    }
-
-    for i in range(1, len(readings)):
-        prev, curr = readings[i-1], readings[i]
-        # A gap of > 5 minutes denotes a separate trip logic boundary
-        if curr.timestamp - prev.timestamp > timedelta(minutes=5):
-            duration = (current_journey["end_time"] - current_journey["start_time"]).total_seconds() / 60
-            current_journey["duration_minutes"] = max(1, int(duration))
-            journeys.append(current_journey)
-            
-            # Start a new journey window
-            current_journey = {
-                "start_time": curr.timestamp, "end_time": curr.timestamp,
-                "alerts": 1 if curr.risk_score > 0 else 0, "duration_minutes": 0
-            }
-        else:
-            current_journey["end_time"] = curr.timestamp
-            if curr.risk_score > 0: 
-                current_journey["alerts"] += 1
-
-    duration = (current_journey["end_time"] - current_journey["start_time"]).total_seconds() / 60
-    current_journey["duration_minutes"] = max(1, int(duration))
-    journeys.append(current_journey)
-
-    return journeys
-
-# ==========================================
-# 4. DASHBOARD LOGIC (EMPLOYER)
+# 4. DASHBOARD: EMPLOYER
 # ==========================================
 
 def get_dashboard_rankings(db: Session, employer_id: int) -> list[dict]:
@@ -213,7 +251,7 @@ def get_dashboard_rankings(db: Session, employer_id: int) -> list[dict]:
             "national_id": driver.national_id,
             "role": "Driver",
             "safety_score": round(driver_rms_score, 2),
-            "trips": len(get_driver_journeys(db, driver.driver_id)),
+            "trips": len(_get_driver_journeys(db, driver.driver_id)),
             "licenseExpiration": driver.license_expiration_date
         })
 
@@ -243,149 +281,219 @@ def get_employer_devices_formatted(db: Session, employer_id: int) -> list[dict]:
         
     return formatted_devices
 
-def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, threshold: float) -> dict:
-    """Aggregates data across ALL drivers in a fleet to provide macro-level analytical charts."""
+def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, target_date: str, threshold: float) -> dict:
+    """Returns top-level summary plus aggregated charts for the entire fleet."""
+    if not target_date:
+        target_date = _get_default_target_date(timeframe)
+        
     drivers = crud.get_drivers_by_employer(db, employer_id)
     if not drivers:
-        return {"summary": {}, "fleet_report": {}, "trend_chart": [], "distractions_split": []}
+        return {"summary_report": {}, "trend_chart": [], "distractions_split": []}
 
     driver_ids = [d.driver_id for d in drivers]
-    readings = crud.get_analytical_scores_for_fleet(db, driver_ids, limit=20000)
+    readings = crud.get_analytical_scores_for_fleet(db, driver_ids, target_date=target_date, limit=20000)
     
-    total_fleet_minutes = 0
+    total_trips = 0
     driver_stats = []
 
     for driver in drivers:
-        d_readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, limit=500)
+        d_readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, target_date=target_date, limit=500)
         d_rms_score = _calculate_rms_score([r.driver_score for r in d_readings])
-        total_fleet_minutes += sum(j["duration_minutes"] for j in get_driver_journeys(db, driver.driver_id))
+        
+        driver_journeys = _get_driver_journeys(db, driver.driver_id, target_date)
+        total_trips += len(driver_journeys)
         driver_stats.append({"name": driver.driver_name, "score": round(d_rms_score, 2)})
 
     driver_stats.sort(key=lambda x: x["score"], reverse=False)
-    summary = {
-        "total_employees": len(drivers),
-        "total_trips": sum(len(get_driver_journeys(db, d_id)) for d_id in driver_ids),
-        "top_driver": driver_stats[0]["name"] if driver_stats else None,
-        "needs_attention": driver_stats[-1]["name"] if driver_stats else None
-    }
 
     if not readings:
-        return {"summary": summary, "fleet_report": {}, "trend_chart": _calculate_trend_chart([], timeframe), "distractions_split": []}
+        return {
+            "summary_report": {
+                "total_employees": len(drivers), "top_driver": driver_stats[0]["name"] if driver_stats else None,
+                "needs_attention": driver_stats[-1]["name"] if driver_stats else None,
+                "total_trips": total_trips, "total_drive_time_mins": 0.0, "total_risky_drive_time_mins": 0.0, 
+                "alerts": 0, "avg_driver_score": 0.0, "avg_road_score": 0.0, "avg_risk_score": 0.0, 
+                "percentile_95th": 0.0, "event_ratio": 0.0, "significance": "No Data"
+            },
+            "trend_chart": [], 
+            "distractions_split": []
+        }
+
+    base_chart = _calculate_trend_chart(readings, timeframe)
+    display_chart = _generate_display_chart(readings, base_chart, timeframe)
+    distractions_split = _calculate_distractions_split(readings)
+    
+    alerts = sum(1 for point in base_chart if point["score"] > threshold)
+    event_ratio = alerts / len(base_chart) if base_chart else 0.0
+    
+    total_drive_time_mins = round(sum(d["duration_minutes"] for d in distractions_split), 2)
+    safe_time = sum(d["duration_minutes"] for d in distractions_split if d["name"] == "Safe Driving")
+    total_risky_drive_time_mins = round(total_drive_time_mins - safe_time, 2)
 
     driver_scores = [r.driver_score for r in readings]
+    road_scores = [r.road_score for r in readings]
     risk_scores = [r.risk_score for r in readings]
     
     rms_fleet_score = _calculate_rms_score(driver_scores)
+    rms_road_score = _calculate_rms_score(road_scores)
+    rms_risk_score = _calculate_rms_score(risk_scores)
     p95_risk = sorted(risk_scores)[int(len(risk_scores) * 0.95)]
-    
-    # Calculate event ratio dynamically based on the frontend's provided threshold
-    event_ratio = sum(1 for r in risk_scores if r > threshold) / len(readings)
 
-    return {
-        "summary": summary,
-        "fleet_report": {
-            "total_fleet_drive_time_mins": total_fleet_minutes,
-            "avg_fleet_score": round(rms_fleet_score * 100, 1),
-            "percentile_95th": round(p95_risk * 100, 1),
-            "event_ratio": round(event_ratio * 100, 1),
-            "significance": "High Risk Fleet" if rms_fleet_score > 0.5 else "Safe Fleet"
-        },
-        "trend_chart": _calculate_trend_chart(readings, timeframe), 
-        "distractions_split": _calculate_distractions_split(readings, total_fleet_minutes)
+    summary_report = {
+        "total_employees": len(drivers),
+        "top_driver": driver_stats[0]["name"] if driver_stats else None,
+        "needs_attention": driver_stats[-1]["name"] if driver_stats else None,
+        "total_trips": total_trips,
+        "total_drive_time_mins": total_drive_time_mins,
+        "total_risky_drive_time_mins": total_risky_drive_time_mins,
+        "alerts": alerts,
+        "avg_driver_score": round(rms_fleet_score, 2),
+        "avg_road_score": round(rms_road_score, 2),
+        "avg_risk_score": round(rms_risk_score, 2),
+        "percentile_95th": round(p95_risk, 2),
+        "event_ratio": round(event_ratio, 2),
+        "significance": "High Risk Fleet" if rms_risk_score > 0.5 else "Safe Fleet"
     }
 
-def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: int, timeframe: str, threshold: float) -> dict:
-    """Deep analysis of a specific driver. Validates employer ownership before returning."""
+    return {
+        "summary_report": summary_report,
+        "trend_chart": display_chart, 
+        "distractions_split": distractions_split
+    }
+
+def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: int, timeframe: str, target_date: str, threshold: float) -> dict:
+    """Returns in-depth analytical charts and history for a specific driver."""
+    if not target_date:
+        target_date = _get_default_target_date(timeframe)
+        
     driver = crud.get_driver_by_email(db, driver_email)
     if not driver or not any(emp.employer_id == employer_id for emp in driver.employers):
         return None
 
-    readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, limit=10000)
-    journeys = get_driver_journeys(db, driver.driver_id)
-    total_drive_time = sum(j["duration_minutes"] for j in journeys)
+    readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, target_date=target_date, limit=10000)
+    journeys = _get_driver_journeys(db, driver.driver_id, target_date)
     
     if not readings:
         return {
             "driver_info": {"name": driver.driver_name, "national_id": driver.national_id, "status": "NO DATA"},
-            "trend_chart": _calculate_trend_chart([], timeframe), "daily_report": {}, "distractions_split": []
+            "summary_report": {
+                "total_trips": len(journeys), "total_drive_time_mins": 0.0,
+                "total_risky_drive_time_mins": 0.0, "alerts": 0, "avg_driver_score": 0.0,
+                "avg_road_score": 0.0, "avg_risk_score": 0.0, "percentile_95th": 0.0,
+                "event_ratio": 0.0, "significance": "No Data"
+            },
+            "analysis": {"trend_chart": [], "distractions_split": []}
         }
+
+    base_chart = _calculate_trend_chart(readings, timeframe)
+    display_chart = _generate_display_chart(readings, base_chart, timeframe)
+    distractions_split = _calculate_distractions_split(readings)
+    
+    alerts = sum(1 for point in base_chart if point["score"] > threshold)
+    event_ratio = alerts / len(base_chart) if base_chart else 0.0
+    
+    total_drive_time_mins = round(sum(d["duration_minutes"] for d in distractions_split), 2)
+    safe_time = sum(d["duration_minutes"] for d in distractions_split if d["name"] == "Safe Driving")
+    total_risky_drive_time_mins = round(total_drive_time_mins - safe_time, 2)
 
     driver_scores = [r.driver_score for r in readings]
     road_scores = [r.road_score for r in readings]
     risk_scores = [r.risk_score for r in readings]
     
     rms_driver_score = _calculate_rms_score(driver_scores)
+    rms_road_score = _calculate_rms_score(road_scores)
+    rms_risk_score = _calculate_rms_score(risk_scores)
     p95_risk = sorted(risk_scores)[int(len(risk_scores) * 0.95)]
-    
-    event_ratio = sum(1 for r in risk_scores if r > threshold) / len(readings)
+
+    summary_report = {
+        "total_trips": len(journeys),
+        "total_drive_time_mins": total_drive_time_mins,
+        "total_risky_drive_time_mins": total_risky_drive_time_mins,
+        "alerts": alerts,
+        "avg_driver_score": round(rms_driver_score, 2),
+        "avg_road_score": round(rms_road_score, 2),
+        "avg_risk_score": round(rms_risk_score, 2),
+        "percentile_95th": round(p95_risk, 2),
+        "event_ratio": round(event_ratio, 2),
+        "significance": "Not Safe" if rms_risk_score > 0.5 else "Safe"
+    }
 
     return {
-        "driver_info": {"name": driver.driver_name, "national_id": driver.national_id, "status": "RESTRICTED" if rms_driver_score > 0.5 else "ACTIVE"},
-        "daily_report": {
-            "total_drive_time_mins": total_drive_time,
-            "avg_driver_score": round(rms_driver_score * 100, 1),
-            "avg_road_score": round(sum(road_scores) / len(readings) * 100, 1),
-            "avg_risk_score": round(sum(risk_scores) / len(readings) * 100, 1),
-            "percentile_95th": round(p95_risk * 100, 1),
-            "event_ratio": round(event_ratio * 100, 1),
-            "significance": "Not Safe" if rms_driver_score > 0.5 else "Safe"
-        },
-        "trend_chart": _calculate_trend_chart(readings, timeframe), 
-        "distractions_split": _calculate_distractions_split(readings, total_drive_time)
+        "driver_info": {"name": driver.driver_name, "national_id": driver.national_id, "status": "RESTRICTED" if rms_risk_score > 0.5 else "ACTIVE"},
+        "summary_report": summary_report,
+        "analysis": {
+            "trend_chart": display_chart, 
+            "distractions_split": distractions_split
+        }
     }
 
 # ==========================================
-# 5. DASHBOARD LOGIC (DRIVER)
+# 5. DASHBOARD: DRIVER
 # ==========================================
 
-def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, timeframe: str, threshold: float) -> dict:
-    """BFF logic aggregating profile, stats, analysis charts, and pending requests into one payload."""
-    journeys = get_driver_journeys(db, current_driver.driver_id)
-    total_alerts = sum(j["alerts"] for j in journeys)
-    total_drive_time = sum(j["duration_minutes"] for j in journeys)
-    
-    stats = {
-        "score": max(0, 100 - (total_alerts * 2)),
-        "total_trips": len(journeys),
-        "safe_hours": total_drive_time // 60,
-        "alerts": total_alerts
-    }
-
+def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, timeframe: str, target_date: str, threshold: float) -> dict:
+    """Returns profile info, quick stats, analytical charts, and pending requests."""
+    if not target_date:
+        target_date = _get_default_target_date(timeframe)
+        
+    journeys = _get_driver_journeys(db, current_driver.driver_id, target_date)
+    readings = crud.get_analytical_scores_for_driver(db, current_driver.driver_id, target_date=target_date, limit=10000)
     requests = crud.get_pending_requests_for_driver(db, current_driver.email)
     formatted_requests = [{"request_id": r.request_id, "employer_name": r.employer.employer_name} for r in requests]
 
-    readings = crud.get_analytical_scores_for_driver(db, current_driver.driver_id, limit=10000)
     if not readings:
-        analysis = {"trend_chart": _calculate_trend_chart([], timeframe), "daily_report": {}, "distractions_split": []}
-    else:
-        driver_scores = [r.driver_score for r in readings]
-        risk_scores = [r.risk_score for r in readings]
-        
-        rms_driver_score = _calculate_rms_score(driver_scores)
-        p95_risk = sorted(risk_scores)[int(len(risk_scores) * 0.95)]
-        
-        event_ratio = sum(1 for r in risk_scores if r > threshold) / len(readings)
-
-        analysis = {
-            "daily_report": {
-                "total_drive_time_mins": total_drive_time,
-                "avg_driver_score": round(rms_driver_score * 100, 1),
-                "percentile_95th": round(p95_risk * 100, 1),
-                "event_ratio": round(event_ratio * 100, 1),
-                "significance": "Needs Improvement" if rms_driver_score > 0.5 else "Safe Driving"
+        return {
+            "profile": {"driver_name": current_driver.driver_name, "email": current_driver.email, "active_employers": [emp.employer_name for emp in current_driver.employers]},
+            "summary_report": {
+                "total_trips": len(journeys), "total_drive_time_mins": 0.0,
+                "total_risky_drive_time_mins": 0.0, "alerts": 0, "avg_driver_score": 0.0,
+                "avg_road_score": 0.0, "avg_risk_score": 0.0, "percentile_95th": 0.0,
+                "event_ratio": 0.0, "significance": "No Data"
             },
-            "trend_chart": _calculate_trend_chart(readings, timeframe), 
-            "distractions_split": _calculate_distractions_split(readings, total_drive_time)
+            "analysis": {"trend_chart": [], "distractions_split": []},
+            "pending_requests": formatted_requests
         }
 
+    base_chart = _calculate_trend_chart(readings, timeframe)
+    display_chart = _generate_display_chart(readings, base_chart, timeframe)
+    distractions_split = _calculate_distractions_split(readings)
+    
+    alerts = sum(1 for point in base_chart if point["score"] > threshold)
+    event_ratio = alerts / len(base_chart) if base_chart else 0.0
+    
+    total_drive_time_mins = round(sum(d["duration_minutes"] for d in distractions_split), 2)
+    safe_time = sum(d["duration_minutes"] for d in distractions_split if d["name"] == "Safe Driving")
+    total_risky_drive_time_mins = round(total_drive_time_mins - safe_time, 2)
+
+    driver_scores = [r.driver_score for r in readings]
+    road_scores = [r.road_score for r in readings]
+    risk_scores = [r.risk_score for r in readings]
+    
+    rms_driver_score = _calculate_rms_score(driver_scores)
+    rms_road_score = _calculate_rms_score(road_scores)
+    rms_risk_score = _calculate_rms_score(risk_scores)
+    p95_risk = sorted(risk_scores)[int(len(risk_scores) * 0.95)]
+
+    summary_report = {
+        "total_trips": len(journeys),
+        "total_drive_time_mins": total_drive_time_mins,
+        "total_risky_drive_time_mins": total_risky_drive_time_mins,
+        "alerts": alerts,
+        "avg_driver_score": round(rms_driver_score, 2),
+        "avg_road_score": round(rms_road_score, 2),
+        "avg_risk_score": round(rms_risk_score, 2),
+        "percentile_95th": round(p95_risk, 2),
+        "event_ratio": round(event_ratio, 2),
+        "significance": "Needs Improvement" if rms_risk_score > 0.5 else "Safe Driving"
+    }
+
     return {
-        "profile": {
-            "driver_name": current_driver.driver_name,
-            "email": current_driver.email,
-            "active_employers": [emp.employer_name for emp in current_driver.employers]
+        "profile": {"driver_name": current_driver.driver_name, "email": current_driver.email, "active_employers": [emp.employer_name for emp in current_driver.employers]},
+        "summary_report": summary_report,
+        "analysis": {
+            "trend_chart": display_chart, 
+            "distractions_split": distractions_split
         },
-        "stats": stats,
-        "analysis": analysis,
         "pending_requests": formatted_requests
     }
 
@@ -414,7 +522,7 @@ def handle_end_trip(db: Session, serial_number: str, current_driver: entities.Dr
     return {"status": "Trip Ended"}
 
 # ==========================================
-# 6. EMPLOYMENT LOGIC
+# 6. EMPLOYMENT
 # ==========================================
 
 def create_employment_request(db: Session, employer_id: int, driver_email: str) -> entities.EmploymentRequest:
@@ -458,7 +566,7 @@ def sever_employer_employment(db: Session, driver_email: str, current_employer: 
     crud.unlink_driver_from_employer(db, driver, current_employer)
 
 # ==========================================
-# 7. HARDWARE INTEGRATION LOGIC
+# 7. HARDWARE & CALIBRATION
 # ==========================================
 
 def handle_provision_device(db: Session, payload: payloads.DeviceProvision) -> entities.Device:
@@ -487,7 +595,6 @@ def handle_add_batch_readings(db: Session, readings: list[payloads.ReadingCreate
         raise HTTPException(status_code=401, detail="Unauthorized Hardware.")
     if any(r.device_id != device.device_id for r in readings):
         raise HTTPException(status_code=400, detail="Device ID mismatch in batch payload.")
-
     crud.create_readings_batch(db=db, readings=readings)
 
 def handle_hardware_status_poll(db: Session, api_key: str) -> dict:
@@ -509,20 +616,20 @@ def handle_hardware_status_poll(db: Session, api_key: str) -> dict:
         
     return {"status": "waiting"}
 
-# ==========================================
-# 8. CALIBRATION LOGIC
-# ==========================================
-
 def request_device_snapshot(db: Session, serial_number: str, current_driver: entities.Driver) -> dict:
-    """Sets a flag telling the hardware to take a camera photo on its next poll."""
+    """Sets a flag telling the hardware to take a camera photo on its next poll and resets calibration."""
     device = crud.get_device_by_serial(db, serial_number)
     if not device or device.employer_id not in [emp.employer_id for emp in current_driver.employers]:
         raise HTTPException(status_code=404, detail="Car not found or unauthorized.")
         
     device.snapshot_requested = True
     device.snapshot_ready = False 
+    
+    device.calibration_data = None
+    device.calibration_synced = False
+    
     db.commit()
-    return {"status": "Snapshot requested. Hardware will upload shortly."}
+    return {"status": "Snapshot requested. Old calibration cleared. Hardware will upload shortly."}
 
 def handle_hardware_upload_snapshot(db: Session, api_key: str, payload: payloads.SnapshotUpload) -> dict:
     """Hardware uploads the requested Base64 image frame AND its AI detections."""
@@ -548,7 +655,6 @@ def get_device_snapshot(db: Session, serial_number: str, current_driver: entitie
     if not device.latest_snapshot:
         raise HTTPException(status_code=404, detail="No snapshot available.")
         
-    # Reset flag to lock the snapshot after fetching it once
     device.snapshot_ready = False
     db.commit()
         
@@ -588,6 +694,56 @@ def get_hardware_calibration(db: Session, api_key: str) -> dict:
     db.commit()
     return device.calibration_data
 
+# ==========================================
+# 8. DATA MANAGEMENT
+# ==========================================
+
+def handle_get_all_readings(db: Session, device_id: int, driver_id: int) -> list[dict]:
+    """Fetches and formats all raw readings for a specific device and driver."""
+    readings = crud.get_all_readings_for_device_and_driver(db, device_id, driver_id)
+    if not readings:
+        return []
+    return [
+        {
+            "device_id": r.device_id,
+            "driver_id": r.driver_id,
+            "timestamp": r.timestamp.isoformat(),
+            "driver_score": r.driver_score,
+            "road_score": r.road_score,
+            "risk_score": r.risk_score,
+            "driver_distraction_distribution": r.driver_distraction_distribution,
+            "urgency": r.urgency,
+            "proximity": r.proximity,
+            "road_objects_classes": r.road_objects_classes,
+            "gps_coordinates": r.gps_coordinates
+        }
+        for r in readings
+    ]
+
+def handle_get_readings_by_time_range(db: Session, device_id: int, driver_id: int, start_time: datetime, end_time: datetime) -> list[dict]:
+    """Fetches and formats readings for a specific device and driver within a time range."""
+    readings = crud.get_readings_by_time_range(db, device_id, driver_id, start_time, end_time)
+    
+    if not readings:
+        return []
+        
+    return [
+        {
+            "device_id": r.device_id,
+            "driver_id": r.driver_id,
+            "timestamp": r.timestamp.isoformat(),
+            "driver_score": r.driver_score,
+            "road_score": r.road_score,
+            "risk_score": r.risk_score,
+            "driver_distraction_distribution": r.driver_distraction_distribution,
+            "urgency": r.urgency,
+            "proximity": r.proximity,
+            "road_objects_classes": r.road_objects_classes,
+            "gps_coordinates": r.gps_coordinates
+        }
+        for r in readings
+    ]
+
 def handle_delete_readings(db: Session, device_id: int, driver_id: int) -> dict:
     """Processes the deletion of readings for a specific device and driver."""
     crud.delete_readings(db, device_id, driver_id)
@@ -618,3 +774,8 @@ def handle_delete_all_employment_requests(db: Session) -> dict:
     """Processes the deletion of all employment requests."""
     count = crud.delete_all_employment_requests(db)
     return {"status": "Success", "message": f"Successfully deleted {count} employment requests."}
+
+def handle_delete_readings_by_time_range(db: Session, device_id: int, driver_id: int, start_time: datetime, end_time: datetime) -> dict:
+    """Processes the deletion of readings within a specific time range."""
+    count = crud.delete_readings_by_time_range(db, device_id, driver_id, start_time, end_time)
+    return {"status": "Success", "message": f"Successfully deleted {count} readings in the specified range."}

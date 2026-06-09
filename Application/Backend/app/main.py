@@ -8,7 +8,6 @@ from app.api.endpoints import router
 from app.database import engine, Base
 from app.models import entities 
 
-# Automatically creates all tables defined in entities.py if they do not exist.
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -17,7 +16,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Allows the frontend to securely communicate with this backend.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -26,5 +24,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mounts all defined endpoints under the /api/v1 prefix.
 app.include_router(router, prefix="/api/v1")
