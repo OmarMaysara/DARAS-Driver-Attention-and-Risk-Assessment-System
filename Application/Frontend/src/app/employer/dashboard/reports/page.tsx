@@ -77,9 +77,23 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
   /* ────────────────────────────────────────────────────── */
 
   const parsedTrends = trendChart && trendChart.length > 0 ? trendChart : [];
-  
-  const labels = parsedTrends.length > 0 ? parsedTrends.map((t: any) => t.name ? t.name.charAt(0) + t.name.slice(1).toLowerCase() : "") : ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const data = parsedTrends.length > 0 ? parsedTrends.map((t: any) => (100 - t.score) / 100) : [0,0,0,0,0,0,0];
+
+  const labels = parsedTrends.length > 0
+    ? parsedTrends.map((t: any) => {
+        const ts: string = t.timestamp ?? t.name ?? "";
+        const parts = ts.split(" ");
+        // "2026-06-08 21:00" → show time if single-day, else "Jun 8"
+        if (parts.length === 2 && parts[1]) return parts[1].substring(0, 5);
+        if (parts[0]) {
+          const d = new Date(parts[0]);
+          return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        }
+        return ts;
+      })
+    : ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const data = parsedTrends.length > 0
+    ? parsedTrends.map((t: any) => t.score ?? t.value ?? 0)
+    : [0,0,0,0,0,0,0];
 
   const PL = 90, PR = 40, PT = 20, PB = 55;
   const CW = W - PL - PR, CH = H - PT - PB;
@@ -171,11 +185,14 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
 
 function FleetDistractionsDonut({ distractions }: { distractions: any[] }) {
   const colorPalette = ["#3b82f6", "#ef4444", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
-  const allDistractions = distractions && distractions.length > 0 ? distractions.map((d: any, i: number) => ({
-    type: d.name ? d.name.charAt(0).toUpperCase() + d.name.slice(1) : "Unknown",
-    value: d.value_percentage || 0,
-    color: colorPalette[i % colorPalette.length]
-  })) : [];
+  const allDistractions = distractions && distractions.length > 0 ? distractions.map((d: any, i: number) => {
+    const name = d.name ? d.name.charAt(0).toUpperCase() + d.name.slice(1) : "Unknown";
+    return {
+      type: name,
+      value: d.value_percentage || 0,
+      color: name.toLowerCase().includes("safe") ? "#22c55e" : colorPalette[i % colorPalette.length],
+    };
+  }) : [];
 
   let currentAngle = -Math.PI / 2;
   const cx = 150, cy = 150, R = 90, r = 35;
@@ -236,7 +253,6 @@ function FleetDistractionsDonut({ distractions }: { distractions: any[] }) {
              </g>
            );
         })}
-        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{Math.round(total)}%</text>
       </svg>
     </div>
   );
@@ -342,21 +358,33 @@ export default function ReportsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
 
-  const fr = fleetAnalysis?.fleet_report;
-  const summary = fleetAnalysis?.summary;
+  const sr = fleetAnalysis?.summary_report ?? null;
+  const fmtPct = (v: number | undefined, fallback: string) =>
+    v !== undefined ? `${Math.round(v * 100)}%` : fallback;
+  const empAvgSafety = avg(employees.map(e => e.safetyScore));
+  const srSafetyScore = sr?.avg_risk_score !== undefined
+    ? Math.round((1 - sr.avg_risk_score) * 100)
+    : empAvgSafety;
 
   const displayStats = {
-    totalDrivers: summary?.total_employees ?? employees.length.toString(),
-    avgSafetyScore: fr?.avg_fleet_score !== undefined ? `${fr.avg_fleet_score}%` : (avg(employees.map(e => e.safetyScore)).toFixed(1) + "%"),
-    avgRiskScore: fr?.avg_fleet_score !== undefined ? `${(100 - fr.avg_fleet_score).toFixed(1)}%` : ((100 - avg(employees.map(e => e.safetyScore))).toFixed(1) + "%"),
-    totalTrips: summary?.total_trips ?? employees.reduce((s, e) => s + e.trips, 0).toLocaleString(),
-    percentile95: fr?.percentile_95th !== undefined ? `${fr.percentile_95th}th` : "N/A",
-    eventRatio: fr?.event_ratio !== undefined ? `${fr.event_ratio}%` : "0.0%",
-    statusLabel: fr?.significance || grade(avg(employees.map(e => e.safetyScore))).label,
-    statusColor: grade(fr?.avg_fleet_score ?? avg(employees.map(e => e.safetyScore))).color,
+    totalDrivers:    sr?.total_employees          ?? employees.length,
+    avgDriverScore:  fmtPct(sr?.avg_driver_score, empAvgSafety.toFixed(1) + "%"),
+    avgRoadScore:    fmtPct(sr?.avg_road_score,   "N/A"),
+    avgRiskScore:    fmtPct(sr?.avg_risk_score,   ((100 - empAvgSafety).toFixed(1) + "%")),
+    totalTrips:      sr?.total_trips              ?? employees.reduce((s, e) => s + e.trips, 0),
+    totalDriveTime:  sr?.total_drive_time_mins    !== undefined ? `${sr.total_drive_time_mins} Min` : "N/A",
+    riskyDriveTime:  sr?.total_risky_drive_time_mins !== undefined ? `${sr.total_risky_drive_time_mins} Min` : "N/A",
+    alerts:          sr?.alerts                   !== undefined ? sr.alerts : "N/A",
+    percentile95:    sr?.percentile_95th          !== undefined ? `${Math.round(sr.percentile_95th * 100)}%` : "N/A",
+    eventRatio:      sr?.event_ratio              !== undefined ? `${Math.round(sr.event_ratio * 100)}%` : "N/A",
+    topDriver:       sr?.top_driver               ?? "N/A",
+    needsAttention:  sr?.needs_attention          ?? "N/A",
+    significance:    sr?.significance             ?? null,
+    gradeLabel:      grade(srSafetyScore).label,
+    statusColor:     grade(srSafetyScore).color,
   };
 
-  const fleetGradeBg = grade(fr?.avg_fleet_score ?? avg(employees.map(e => e.safetyScore))).bg;
+  const fleetGradeBg = grade(srSafetyScore).bg;
 
   function downloadReport() {
     const sorted = [...employees].sort((a,b) => b.safetyScore - a.safetyScore);
@@ -404,14 +432,14 @@ export default function ReportsPage() {
                 <h1 className="text-xl font-black text-blue-950 tracking-tight">Fleet Analysis</h1>
                 <div style={{ background: fleetGradeBg, color: displayStats.statusColor }}
                   className="px-2.5 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-[0.1em] shadow-sm">
-                  {displayStats.statusLabel.split(" ")[0]}
+                  {displayStats.gradeLabel}
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{displayStats.totalDrivers} Drivers</span>
                 <span className="text-slate-300">•</span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Avg Score: <span style={{ color: displayStats.statusColor }}>{displayStats.avgSafetyScore}</span>
+                  Avg Risk: <span style={{ color: displayStats.statusColor }}>{displayStats.avgRiskScore}</span>
                 </span>
               </div>
             </div>
@@ -446,21 +474,39 @@ export default function ReportsPage() {
                 </div>
                 <div className="flex-1 flex flex-col justify-between text-[13px] font-bold text-slate-600">
                   {[
-                    ["Total Drivers",   displayStats.totalDrivers],
-                    ["Avg Safety Score", displayStats.avgSafetyScore],
-                    ["Avg Risk Score",  displayStats.avgRiskScore],
-                    ["Total Trips",     displayStats.totalTrips],
-                    ["95th Percentile", displayStats.percentile95],
-                    ["Event Ratio",     displayStats.eventRatio],
+                    ["Total Employees",    displayStats.totalDrivers],
+                    ["Total Trips",        displayStats.totalTrips],
+                    ["Total Drive Time",   displayStats.totalDriveTime],
+                    ["Risky Drive Time",   displayStats.riskyDriveTime],
+                    ["Alerts",             displayStats.alerts],
+                    ["Avg Driver Score",   displayStats.avgDriverScore],
+                    ["Avg Road Score",     displayStats.avgRoadScore],
+                    ["Avg Risk Score",     displayStats.avgRiskScore],
+                    ["95th Percentile",    displayStats.percentile95],
+                    ["Event Ratio",        displayStats.eventRatio],
+                    ["Top Driver",         displayStats.topDriver],
+                    ["Needs Attention",    displayStats.needsAttention],
                   ].map(([k, v]) => (
                     <div key={k} className="flex justify-between py-2 border-b border-slate-50">
                       <span>{k}</span><span className="text-blue-950 font-black">{v}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between py-2 mt-2 bg-slate-50/60 rounded-lg px-3">
-                    <span className="text-slate-500">Fleet Status</span>
-                    <span style={{ color: displayStats.statusColor }} className="font-black">{displayStats.statusLabel}</span>
-                  </div>
+                  {displayStats.significance && (
+                    <div className={`flex justify-between py-3 mt-4 rounded-xl px-4 ring-1 ${
+                      displayStats.significance.toLowerCase().includes("improvement") || displayStats.significance.toLowerCase().includes("risk")
+                        ? "bg-rose-50/50 ring-rose-100"
+                        : "bg-emerald-50/50 ring-emerald-100"
+                    }`}>
+                      <span className={`font-bold uppercase text-[10px] tracking-wider ${
+                        displayStats.significance.toLowerCase().includes("improvement") || displayStats.significance.toLowerCase().includes("risk")
+                          ? "text-rose-600" : "text-emerald-700"
+                      }`}>Significance</span>
+                      <span className={`font-black ${
+                        displayStats.significance.toLowerCase().includes("improvement") || displayStats.significance.toLowerCase().includes("risk")
+                          ? "text-rose-600" : "text-emerald-600"
+                      }`}>{displayStats.significance}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               
