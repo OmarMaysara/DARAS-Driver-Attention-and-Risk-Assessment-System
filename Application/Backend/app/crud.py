@@ -9,6 +9,11 @@ import secrets
 
 from app.models import entities
 from app.schemas import payloads
+from datetime import datetime
+
+# ==========================================
+# 1. USERS (EMPLOYERS & DRIVERS)
+# ==========================================
 
 def create_employer(db: Session, employer: payloads.EmployerCreate, hashed_password: str) -> entities.Employer:
     """Creates a new employer account with a securely hashed password."""
@@ -65,6 +70,10 @@ def get_drivers_by_employer(db: Session, employer_id: int):
         entities.Driver.employers.any(entities.Employer.employer_id == employer_id)
     ).all()
 
+# ==========================================
+# 2. EMPLOYMENT LINKS
+# ==========================================
+
 def create_employment_request(db: Session, employer_id: int, driver_email: str):
     """Creates a pending employment invitation for a driver."""
     req = entities.EmploymentRequest(employer_id=employer_id, driver_email=driver_email)
@@ -95,6 +104,10 @@ def unlink_driver_from_employer(db: Session, driver: entities.Driver, employer: 
     if employer in driver.employers:
         driver.employers.remove(employer)
         db.commit()
+
+# ==========================================
+# 3. HARDWARE & DEVICES
+# ==========================================
 
 def provision_device(db: Session, device: payloads.DeviceProvision) -> entities.Device:
     """Adds a newly manufactured device and generates the permanent API key."""
@@ -133,36 +146,33 @@ def get_devices_by_employer(db: Session, employer_id: int):
     """Fetches all devices owned by a specific fleet."""
     return db.query(entities.Device).filter(entities.Device.employer_id == employer_id).all()
 
+# ==========================================
+# 4. TELEMETRY & READINGS
+# ==========================================
+
 def get_readings_for_driver(db: Session, driver_id: int, limit: int = 100):
     """Fetches the most recent FULL telemetry readings (useful for single point checks)."""
     return db.query(entities.Reading).filter(
         entities.Reading.driver_id == driver_id
     ).order_by(desc(entities.Reading.timestamp)).limit(limit).all()
 
-def get_analytical_scores_for_driver(db: Session, driver_id: int, limit: int = 10000):
-    """Fetches ONLY the required numerical columns for memory-efficient math."""
-    return db.query(
-        entities.Reading.driver_score, 
-        entities.Reading.road_score, 
-        entities.Reading.risk_score,
-        entities.Reading.timestamp,
-        entities.Reading.driver_distraction_distribution
-    ).filter(
-        entities.Reading.driver_id == driver_id
-    ).order_by(desc(entities.Reading.timestamp)).limit(limit).all()
+def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: str = None, limit: int = 10000):
+    """Retrieves recent readings for a specific driver with optional date filtering."""
+    query = db.query(entities.Reading).filter(entities.Reading.driver_id == driver_id)
+    
+    if target_date:
+        query = query.filter(entities.Reading.timestamp.like(f"{target_date}%"))
+        
+    return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
-def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], limit: int = 20000):
-    """Fetches ONLY the required numerical columns across the fleet."""
-    if not driver_ids:
-        return []
-    return db.query(
-        entities.Reading.driver_score, 
-        entities.Reading.risk_score,
-        entities.Reading.timestamp,
-        entities.Reading.driver_distraction_distribution
-    ).filter(
-        entities.Reading.driver_id.in_(driver_ids)
-    ).order_by(desc(entities.Reading.timestamp)).limit(limit).all()
+def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], target_date: str = None, limit: int = 20000):
+    """Retrieves recent readings across multiple drivers for fleet-wide analysis with optional date filtering."""
+    query = db.query(entities.Reading).filter(entities.Reading.driver_id.in_(driver_ids))
+    
+    if target_date:
+        query = query.filter(entities.Reading.timestamp.like(f"{target_date}%"))
+        
+    return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
 def create_readings_batch(db: Session, readings: list[payloads.ReadingCreate]):
     """Inserts telemetry readings. Safely ignores exact duplicates if hardware retries an upload."""
@@ -186,12 +196,31 @@ def create_readings_batch(db: Session, readings: list[payloads.ReadingCreate]):
         for r in readings
     ]
 
-    # SQLite specific logic to ignore duplicate inserts based on primary keys
     stmt = insert(entities.Reading).values(values)
     stmt = stmt.on_conflict_do_nothing(index_elements=['device_id', 'driver_id', 'timestamp'])
     
     db.execute(stmt)
     db.commit()
+
+def get_all_readings_for_device_and_driver(db: Session, device_id: int, driver_id: int):
+    """Retrieves every single telemetry reading for a specific device and driver."""
+    return db.query(entities.Reading).filter(
+        entities.Reading.device_id == device_id,
+        entities.Reading.driver_id == driver_id
+    ).order_by(entities.Reading.timestamp.asc()).all()
+
+def get_readings_by_time_range(db: Session, device_id: int, driver_id: int, start_time: datetime, end_time: datetime):
+    """Retrieves telemetry readings for a specific device and driver within a timestamp range."""
+    return db.query(entities.Reading).filter(
+        entities.Reading.device_id == device_id,
+        entities.Reading.driver_id == driver_id,
+        entities.Reading.timestamp >= start_time,
+        entities.Reading.timestamp <= end_time
+    ).order_by(entities.Reading.timestamp.asc()).all()
+
+# ==========================================
+# 5. DATA MANAGEMENT & DELETION
+# ==========================================
 
 def delete_readings(db: Session, device_id: int, driver_id: int):
     """Deletes all readings associated with a specific device and driver."""
@@ -228,5 +257,16 @@ def delete_driver(db: Session, driver_id: int):
 def delete_all_employment_requests(db: Session):
     """Deletes all records from the employment_requests table."""
     deleted_count = db.query(entities.EmploymentRequest).delete(synchronize_session=False)
+    db.commit()
+    return deleted_count
+
+def delete_readings_by_time_range(db: Session, device_id: int, driver_id: int, start_time: datetime, end_time: datetime):
+    """Deletes readings for a specific device and driver within a timestamp range."""
+    deleted_count = db.query(entities.Reading).filter(
+        entities.Reading.device_id == device_id,
+        entities.Reading.driver_id == driver_id,
+        entities.Reading.timestamp >= start_time,
+        entities.Reading.timestamp <= end_time
+    ).delete(synchronize_session=False)
     db.commit()
     return deleted_count

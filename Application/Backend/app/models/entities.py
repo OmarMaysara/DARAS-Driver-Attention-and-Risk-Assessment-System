@@ -5,7 +5,6 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Date, ForeignKe
 from sqlalchemy.orm import relationship
 from app.database import Base
 
-# Many-to-Many link allowing a driver to work for multiple employers.
 driver_employer_association = Table(
     "driver_employer",
     Base.metadata,

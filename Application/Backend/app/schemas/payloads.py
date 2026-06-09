@@ -5,18 +5,9 @@ from pydantic import BaseModel, Field, EmailStr
 from datetime import date, datetime
 from typing import Optional
 
-class DistractionDistribution(BaseModel):
-    """Defines the probability distribution of current driver distractions."""
-    safe_driving: float
-    texting_right: float
-    texting_left: float
-    talking_to_passenger: float
-    drinking: float
-    calling_right: float
-    calling_left: float
-    operating_radio: float
-    hair_and_makeup: float
-    reaching_behind: float
+# ==========================================
+# 1. REGISTRATION & AUTHENTICATION
+# ==========================================
 
 class EmployerCreate(BaseModel):
     """Payload for registering a new employer."""
@@ -52,6 +43,10 @@ class DriverTokenResponse(BaseModel):
     token_type: str = "bearer"
     driver_id: int
 
+# ==========================================
+# 2. EMPLOYMENT & TRIPS
+# ==========================================
+
 class EmploymentRequestCreate(BaseModel):
     """Payload for inviting a driver to a fleet."""
     driver_email: EmailStr
@@ -64,6 +59,10 @@ class TripRequest(BaseModel):
     """Payload containing the vehicle serial number to start/end a trip."""
     serial_number: str
 
+# ==========================================
+# 3. HARDWARE & READINGS
+# ==========================================
+
 class DeviceProvision(BaseModel):
     """Admin payload to provision a newly manufactured device."""
     serial_number: str = Field(..., min_length=3)
@@ -74,6 +73,19 @@ class DeviceClaim(BaseModel):
     """Payload for an employer claiming a purchased device."""
     serial_number: str
     activation_pin: str
+
+class DistractionDistribution(BaseModel):
+    """Defines the probability distribution of current driver distractions."""
+    safe_driving: float
+    texting_right: float
+    texting_left: float
+    talking_to_passenger: float
+    drinking: float
+    calling_right: float
+    calling_left: float
+    operating_radio: float
+    hair_and_makeup: float
+    reaching_behind: float
 
 class ReadingCreate(BaseModel):
     """Payload for a single telemetry reading from the hardware."""
@@ -88,6 +100,10 @@ class ReadingCreate(BaseModel):
     proximity: float
     road_objects_classes: str
     gps_coordinates: Optional[str] = None
+
+# ==========================================
+# 4. CALIBRATION
+# ==========================================
 
 class BoundingBox(BaseModel):
     """Represents an object detected by the AI model on the hardware."""

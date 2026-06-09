@@ -18,6 +18,7 @@ from app.schemas.payloads import (
     SnapshotUpload, CalibrationSubmit
 )
 from app.services import operations
+from datetime import datetime
 
 router = APIRouter()
 
@@ -108,24 +109,26 @@ async def get_employer_devices(db: Session = Depends(get_db), current_employer =
 
 @router.get("/dashboard/employer/fleet-analysis", tags=["Dashboard - Employer"])
 async def get_fleet_analysis(
-    timeframe: str = Query("week", description="Grouping timeframe: day, week, month"),
+    timeframe: str = Query("day", description="Grouping timeframe: hour, day, month"),
+    target_date: str | None = Query(None, description="Optional target date for filtering, e.g., '2026-06-04' or '2026-06'"),
     threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
     db: Session = Depends(get_db), 
     current_employer = Depends(get_current_employer)
 ):
     """Returns top-level summary plus aggregated charts for the entire fleet."""
-    return operations.get_fleet_wide_analysis(db, current_employer.employer_id, timeframe, threshold)
+    return operations.get_fleet_wide_analysis(db, current_employer.employer_id, timeframe, target_date, threshold)
 
 @router.get("/dashboard/employer/drivers/{driver_email}/details", tags=["Dashboard - Employer"])
 async def get_driver_detailed_view(
     driver_email: str, 
-    timeframe: str = Query("week", description="Grouping timeframe: day, week, month"),
+    timeframe: str = Query("day", description="Grouping timeframe: hour, day, month"),
+    target_date: str | None = Query(None, description="Optional target date for filtering, e.g., '2026-06-04' or '2026-06'"),
     threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
     db: Session = Depends(get_db), 
     current_employer = Depends(get_current_employer)
 ):
     """Returns in-depth analytical charts and history for a specific driver."""
-    details = operations.get_driver_detailed_dashboard(db, driver_email, current_employer.employer_id, timeframe, threshold)
+    details = operations.get_driver_detailed_dashboard(db, driver_email, current_employer.employer_id, timeframe, target_date, threshold)
     if not details: 
         raise HTTPException(status_code=404, detail="Driver not found in your fleet")
     return details
@@ -136,13 +139,14 @@ async def get_driver_detailed_view(
 
 @router.get("/dashboard/driver/details", tags=["Dashboard - Driver"])
 async def get_driver_dashboard(
-    timeframe: str = Query("week", description="Grouping timeframe: day, week, month"),
+    timeframe: str = Query("day", description="Grouping timeframe: hour, day, month"),
+    target_date: str | None = Query(None, description="Optional target date for filtering, e.g., '2026-06-04' or '2026-06'"),
     threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
     db: Session = Depends(get_db), 
     current_driver = Depends(get_current_driver)
 ):
     """BFF Endpoint: Returns profile info, quick stats, analytical charts, and pending requests in one call."""
-    return operations.get_full_driver_dashboard(db, current_driver, timeframe, threshold)
+    return operations.get_full_driver_dashboard(db, current_driver, timeframe, target_date, threshold)
 
 @router.post("/dashboard/driver/start-trip", tags=["Dashboard - Driver"])
 async def driver_start_trip(payload: TripRequest, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
@@ -153,21 +157,6 @@ async def driver_start_trip(payload: TripRequest, db: Session = Depends(get_db),
 async def driver_end_trip(payload: TripRequest, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
     """Unassigns the driver from the vehicle, formally ending the journey."""
     return operations.handle_end_trip(db, payload.serial_number, current_driver)
-
-@router.post("/dashboard/driver/calibration/request-snapshot", tags=["Dashboard - Driver"])
-async def request_calibration_snapshot(payload: TripRequest, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
-    """Driver clicks 'Capture Image' on web app to wake up the camera."""
-    return operations.request_device_snapshot(db, payload.serial_number, current_driver)
-
-@router.get("/dashboard/driver/calibration/snapshot/{serial_number}", tags=["Dashboard - Driver"])
-async def get_calibration_snapshot(serial_number: str, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
-    """Fetches the latest camera frame for the frontend UI."""
-    return operations.get_device_snapshot(db, serial_number, current_driver)
-
-@router.post("/dashboard/driver/calibration/save", tags=["Dashboard - Driver"])
-async def save_device_calibration(payload: CalibrationSubmit, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
-    """Saves the 4 lane nodes and physical attributes from the frontend UI."""
-    return operations.handle_save_calibration(db, payload, current_driver)
 
 # ==========================================
 # 6. EMPLOYMENT
@@ -198,7 +187,7 @@ async def sever_employment_employer(driver_email: str, db: Session = Depends(get
     return {"status": "Success", "message": "Driver removed from fleet"}
 
 # ==========================================
-# 7. HARDWARE INTEGRATION AND MANAGEMENT
+# 7. HARDWARE & CALIBRATION
 # ==========================================
 
 @router.post("/internal/devices/provision", tags=["Hardware Management"])
@@ -223,10 +212,25 @@ async def check_hardware_status(x_api_key: str = Header(...), db: Session = Depe
     """Hardware polls this endpoint waiting for commands or an active driver."""
     return operations.handle_hardware_status_poll(db, x_api_key)
 
+@router.post("/dashboard/driver/calibration/request-snapshot", tags=["Dashboard - Driver"])
+async def request_calibration_snapshot(payload: TripRequest, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
+    """Driver clicks 'Capture Image' on web app to wake up the camera."""
+    return operations.request_device_snapshot(db, payload.serial_number, current_driver)
+
 @router.post("/hardware/calibration/snapshot", tags=["Hardware Integration"])
 async def upload_camera_snapshot(payload: SnapshotUpload, x_api_key: str = Header(...), db: Session = Depends(get_db)):
     """Hardware uploads a single base64 image frame AND its AI bounding boxes."""
     return operations.handle_hardware_upload_snapshot(db, x_api_key, payload)
+
+@router.get("/dashboard/driver/calibration/snapshot/{serial_number}", tags=["Dashboard - Driver"])
+async def get_calibration_snapshot(serial_number: str, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
+    """Fetches the latest camera frame for the frontend UI."""
+    return operations.get_device_snapshot(db, serial_number, current_driver)
+
+@router.post("/dashboard/driver/calibration/save", tags=["Dashboard - Driver"])
+async def save_device_calibration(payload: CalibrationSubmit, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
+    """Saves the 4 lane nodes and physical attributes from the frontend UI."""
+    return operations.handle_save_calibration(db, payload, current_driver)
 
 @router.get("/hardware/calibration", tags=["Hardware Integration"])
 async def fetch_calibration_config(x_api_key: str = Header(...), db: Session = Depends(get_db)):
@@ -234,8 +238,24 @@ async def fetch_calibration_config(x_api_key: str = Header(...), db: Session = D
     return operations.get_hardware_calibration(db, x_api_key)
 
 # ==========================================
-# DATA DELETION ENDPOINTS
+# 8. DATA MANAGEMENT
 # ==========================================
+
+@router.get("/readings/{device_id}/{driver_id}/all", tags=["Data Management"])
+async def get_all_readings(device_id: int, driver_id: int, db: Session = Depends(get_db)):
+    """Fetches every single raw reading for a given device and driver pair."""
+    return operations.handle_get_all_readings(db, device_id, driver_id)
+
+@router.get("/readings/{device_id}/{driver_id}/range", tags=["Data Management"])
+async def get_readings_by_time_range(
+    device_id: int, 
+    driver_id: int, 
+    start_time: datetime = Query(..., description="Start timestamp (e.g., 2026-06-04T14:30:00)"),
+    end_time: datetime = Query(..., description="End timestamp (e.g., 2026-06-04T16:30:00)"),
+    db: Session = Depends(get_db)
+):
+    """Fetches readings for a given device and driver within a specific time range."""
+    return operations.handle_get_readings_by_time_range(db, device_id, driver_id, start_time, end_time)
 
 @router.delete("/readings/{device_id}/{driver_id}", tags=["Data Management"])
 async def delete_readings(device_id: int, driver_id: int, db: Session = Depends(get_db)):
@@ -261,3 +281,14 @@ async def delete_driver(driver_id: int, db: Session = Depends(get_db)):
 async def delete_all_employment_requests(db: Session = Depends(get_db)):
     """Deletes all employment requests in the system."""
     return operations.handle_delete_all_employment_requests(db)
+
+@router.delete("/readings/{device_id}/{driver_id}/range", tags=["Data Management"])
+async def delete_readings_by_time_range(
+    device_id: int, 
+    driver_id: int, 
+    start_time: datetime = Query(..., description="Start timestamp (e.g., 2026-06-04T14:30:00)"),
+    end_time: datetime = Query(..., description="End timestamp (e.g., 2026-06-04T16:30:00)"),
+    db: Session = Depends(get_db)
+):
+    """Deletes readings for a given device and driver within a specific time range."""
+    return operations.handle_delete_readings_by_time_range(db, device_id, driver_id, start_time, end_time)

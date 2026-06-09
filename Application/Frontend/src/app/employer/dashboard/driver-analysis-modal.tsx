@@ -168,24 +168,38 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const rawSplit = analysis?.distractions_split || reportData?.distractions_split || [];
   
   if (rawSplit.length > 0) {
-    allDistractions = rawSplit.map((d: any, i: number) => ({
-      type: d.name ? d.name.charAt(0).toUpperCase() + d.name.slice(1) : "Unknown",
-      value: d.value_percentage || d.value || 0,
-      duration: d.duration_minutes !== undefined ? Math.round(d.duration_minutes * 60) : (d.duration || 0),
-      color: colorPalette[i % colorPalette.length]
-    }));
+    allDistractions = rawSplit.map((d: any, i: number) => {
+      const name = d.name ? d.name.charAt(0).toUpperCase() + d.name.slice(1) : "Unknown";
+      return {
+        type: name,
+        value: d.value_percentage || d.value || 0,
+        duration: d.duration_minutes !== undefined ? Math.round(d.duration_minutes * 60) : (d.duration || 0),
+        color: name.toLowerCase().includes("safe") ? "#22c55e" : colorPalette[i % colorPalette.length],
+      };
+    });
   }
 
-  const dr = analysis?.daily_report || reportData?.daily_report;
+  const driverInfo = reportData?.driver_info ?? null;
+  const dr = reportData?.summary_report ?? null;
+  const fmtPct = (v: number | undefined, fallback: string) =>
+    v !== undefined ? `${Math.round(v * 100)}%` : fallback;
   const stats = {
-    totalDriveTime: dr?.total_drive_time_mins !== undefined ? `${dr.total_drive_time_mins} Minutes` : reportData?.stats?.totalDriveTime || `${Math.max(employee.trips * 45, 120)} Minutes`,
-    avgDriverScore: dr?.avg_driver_score !== undefined ? `${dr.avg_driver_score}%` : reportData?.stats?.avgDriverScore || employee.safetyScore + "%",
-    avgRoadScore: dr?.avg_road_score !== undefined ? `${dr.avg_road_score}%` : reportData?.stats?.avgRoadScore || "91%",
-    avgRiskScore: dr?.avg_risk_score !== undefined ? `${dr.avg_risk_score}%` : reportData?.stats?.avgRiskScore || `${(100 - employee.safetyScore).toFixed(1)}%`,
-    percentile95: dr?.percentile_95th !== undefined ? `${dr.percentile_95th}th` : reportData?.stats?.percentile95 || "96th",
-    eventRatio: dr?.event_ratio !== undefined ? `${dr.event_ratio}%` : reportData?.stats?.eventRatio || `${((employee.incidents / (employee.trips || 1)) * 100).toFixed(1)}%`,
-    significance: dr?.significance || reportData?.stats?.significance || (employee.safetyScore < 75 ? "Not Safe" : "Safe")
+    totalTrips:      dr?.total_trips                    !== undefined ? `${dr.total_trips} Trips`               : `${employee.trips} Trips`,
+    totalDriveTime:  dr?.total_drive_time_mins          !== undefined ? `${dr.total_drive_time_mins} Min`       : `${Math.max(employee.trips * 45, 120)} Min`,
+    riskyDriveTime:  dr?.total_risky_drive_time_mins    !== undefined ? `${dr.total_risky_drive_time_mins} Min` : "–",
+    alerts:          dr?.alerts                         !== undefined ? `${dr.alerts} Alert${dr.alerts !== 1 ? "s" : ""}` : "–",
+    avgDriverScore:  fmtPct(dr?.avg_driver_score, employee.safetyScore + "%"),
+    avgRoadScore:    fmtPct(dr?.avg_road_score,   "–"),
+    avgRiskScore:    fmtPct(dr?.avg_risk_score,   `${(100 - employee.safetyScore).toFixed(1)}%`),
+    percentile95:    dr?.percentile_95th                !== undefined ? `${Math.round(dr.percentile_95th * 100)}%` : "–",
+    eventRatio:      dr?.event_ratio                    !== undefined ? `${Math.round(dr.event_ratio * 100)}%`     : "–",
+    significance:    dr?.significance                   ?? (employee.safetyScore < 75 ? "Not Safe" : "Safe"),
   };
+  const isSafe = stats.significance.toLowerCase().includes("safe") && !stats.significance.toLowerCase().includes("not safe");
+  const displayName = driverInfo?.name ?? employee.name;
+  const displayNationalId = driverInfo?.national_id ?? employee.nationalId;
+  const displayStatus = driverInfo?.status ?? (employee.safetyScore >= 85 ? "Elite" : employee.safetyScore >= 70 ? "Verified" : "Restricted");
+  const riskScore = dr?.avg_risk_score !== undefined ? dr.avg_risk_score : (100 - employee.safetyScore) / 100;
 
   // --- Line Chart Component (Risk Score / Time) ---
   const LineChart = () => {
@@ -352,11 +366,6 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     let currentAngle = -Math.PI / 2;
     const cx = 150, cy = 150, R = 90, r = 35;
     const total = allDistractions.reduce((sum, d) => sum + d.value, 0);
-    const centerPct =
-      dr?.total_driving_time != null && dr?.safe_driving_time != null
-        ? ((dr.total_driving_time - dr.safe_driving_time) * 100).toFixed(2)
-        : total;
-
     return (
       <div className="relative w-full h-full flex items-center justify-center">
         <svg viewBox="0 0 300 300" className="w-full h-full max-h-[220px] drop-shadow-md overflow-visible">
@@ -410,8 +419,6 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                </g>
              );
           })}
-          {/* Center text */}
-          <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="900" className="fill-blue-950">{centerPct}%</text>
         </svg>
       </div>
     );
@@ -464,19 +471,19 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
             </div>
             <div>
               <div className="flex items-center gap-3">
-                <h2 className="text-xl font-black text-blue-950 tracking-tight">{employee.name}</h2>
+                <h2 className="text-xl font-black text-blue-950 tracking-tight">{displayName}</h2>
                 <div className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-[0.1em] shadow-sm ring-1 ${
-                  employee.safetyScore >= 85 ? "bg-emerald-50 text-emerald-600 ring-emerald-100" :
-                  employee.safetyScore >= 70 ? "bg-amber-50 text-amber-600 ring-amber-100" :
-                  "bg-rose-50 text-rose-600 ring-rose-100"
+                  displayStatus === "ACTIVE" || employee.safetyScore >= 70
+                    ? "bg-emerald-50 text-emerald-600 ring-emerald-100"
+                    : "bg-rose-50 text-rose-600 ring-rose-100"
                 }`}>
-                  {employee.safetyScore >= 85 ? "Elite" : employee.safetyScore >= 70 ? "Verified" : "Restricted"}
+                  {displayStatus}
                 </div>
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{employee.role}</span>
-                <span className="text-slate-300">ΓÇó</span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID: {employee.nationalId}</span>
+                <span className="text-slate-300">•</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ID: {displayNationalId}</span>
               </div>
             </div>
           </div>
@@ -507,35 +514,27 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                 </div>
                 
                 <div className="flex-1 flex flex-col justify-between text-[13px] font-bold text-slate-600">
-                  <div className="flex justify-between py-2 border-b border-slate-50">
-                    <span>Total Drive Time</span>
-                    <span className="text-blue-950 font-black">{stats.totalDriveTime}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-50">
-                    <span>Avg Driver Score</span>
-                    <span className="text-blue-950 font-black">{stats.avgDriverScore}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-50">
-                    <span>Avg Road Score</span>
-                    <span className="text-blue-950 font-black">{stats.avgRoadScore}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-50">
-                    <span>Avg Risk Score</span>
-                    <span className="text-blue-950 font-black">{stats.avgRiskScore}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-50">
-                    <span>95<sup className="text-[9px]">th</sup> Percentile</span>
-                    <span className="text-blue-950 font-black">{stats.percentile95}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-50">
-                    <span>Event Ratio</span>
-                    <span className="text-blue-950 font-black">{stats.eventRatio}</span>
-                  </div>
-                  <div className="flex justify-between py-2 mt-2 bg-slate-50/50 rounded-lg px-3">
-                    <span className="text-slate-500">Significance</span>
-                    <span className={`font-black ${stats.significance === "Safe" ? "text-emerald-500" : "text-rose-500"}`}>
-                      {stats.significance}
-                    </span>
+                  {[
+                    ["Total Trips",      stats.totalTrips],
+                    ["Total Drive Time", stats.totalDriveTime],
+                    ["Risky Drive Time", stats.riskyDriveTime],
+                    ["Alerts",           stats.alerts],
+                    ["Avg Driver Score", stats.avgDriverScore],
+                    ["Avg Road Score",   stats.avgRoadScore],
+                    ["Avg Risk Score",   stats.avgRiskScore],
+                    ["95th Percentile",  stats.percentile95],
+                    ["Event Ratio",      stats.eventRatio],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between py-2 border-b border-slate-50">
+                      <span>{label}</span>
+                      <span className="text-blue-950 font-black">{value}</span>
+                    </div>
+                  ))}
+                  <div className={`flex justify-between py-3 mt-4 rounded-xl px-4 ring-1 ${
+                    isSafe ? "bg-emerald-50/50 ring-emerald-100" : "bg-rose-50/50 ring-rose-100"
+                  }`}>
+                    <span className={`font-bold uppercase text-[10px] tracking-wider ${isSafe ? "text-emerald-700" : "text-rose-600"}`}>Significance</span>
+                    <span className={`font-black ${isSafe ? "text-emerald-600" : "text-rose-600"}`}>{stats.significance}</span>
                   </div>
                 </div>
              </div>
