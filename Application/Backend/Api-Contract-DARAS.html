@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADAS Fleet Intelligence API Contract (v2)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 950px;
+            margin: 0 auto;
+            padding: 2rem;
+            background-color: #f4f7f6;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 2rem;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 2.5rem;
+            border-bottom: 2px solid #e1e4e8;
+            padding-bottom: 5px;
+        }
+        h3 {
+            color: #34495e;
+            margin-top: 1.5rem;
+            display: flex;
+            align-items: center;
+        }
+        .endpoint {
+            background-color: #ffffff;
+            border: 1px solid #e1e4e8;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+        }
+        .method {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: 700;
+            color: #fff;
+            margin-right: 12px;
+            font-size: 0.9em;
+            letter-spacing: 0.5px;
+        }
+        .method.post { background-color: #2ecc71; }
+        .method.get { background-color: #3498db; }
+        .method.delete { background-color: #e74c3c; }
+        .path {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.05em;
+            color: #2c3e50;
+        }
+        ul {
+            margin-top: 0.5rem;
+            padding-left: 1.5rem;
+        }
+        li {
+            margin-bottom: 0.3rem;
+        }
+        code {
+            background-color: #f1f2f3;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            color: #d35400;
+            font-size: 0.95em;
+        }
+        .section-note {
+            font-style: italic;
+            color: #7f8c8d;
+            background-color: #e8f4f8;
+            padding: 10px 15px;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+        .highlight-change {
+            background-color: #fff8e1;
+            border: 1px dashed #f39c12;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ADAS Fleet Intelligence API Contract (v2)</h1>
+
+    <h2>1. Registration</h2>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/employer/register</span></h3>
+        <p><strong>Description:</strong> Registers a new employer fleet account.</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+            <li><code>employer_name</code> (string)</li>
+            <li><code>phone_number</code> (string)</li>
+            <li><code>email</code> (string, valid email)</li>
+            <li><code>country</code> (string)</li>
+            <li><code>password</code> (string, min 8 chars)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/driver/register</span></h3>
+        <p><strong>Description:</strong> Registers a new independent driver account.</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+            <li><code>driver_name</code> (string)</li>
+            <li><code>phone_number</code> (string)</li>
+            <li><code>national_id</code> (string)</li>
+            <li><code>license_expiration_date</code> (string, YYYY-MM-DD)</li>
+            <li><code>email</code> (string, valid email)</li>
+            <li><code>password</code> (string, min 8 chars)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+            <li><code>driver_id</code> (integer)</li>
+        </ul>
+    </div>
+
+    <h2>2. Authentication</h2>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/employer/login</span></h3>
+        <p><strong>Description:</strong> Authenticates an employer and returns a JWT.</p>
+        <p><strong>Request Body (Form Data):</strong></p>
+        <ul>
+            <li><code>username</code> (string, email address)</li>
+            <li><code>password</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>access_token</code> (string)</li>
+            <li><code>token_type</code> (string, defaults to "bearer")</li>
+            <li><code>employer_id</code> (integer)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/driver/login</span></h3>
+        <p><strong>Description:</strong> Authenticates a driver and returns a JWT.</p>
+        <p><strong>Request Body (Form Data):</strong></p>
+        <ul>
+            <li><code>username</code> (string, email address)</li>
+            <li><code>password</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>access_token</code> (string)</li>
+            <li><code>token_type</code> (string, defaults to "bearer")</li>
+            <li><code>driver_id</code> (integer)</li>
+        </ul>
+    </div>
+
+    <h2>3. Dashboard - Employer</h2>
+    <p class="section-note">Requires Employer JWT in <code>Authorization: Bearer &lt;token&gt;</code> header</p>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/dashboard/employer/drivers</span></h3>
+        <p><strong>Description:</strong> Retrieves all drivers in a fleet, sorted by safety scores.</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>ranked_employees</code> (array of objects):
+                <ul>
+                    <li><code>employee</code> (string)</li>
+                    <li><code>email</code> (string)</li>
+                    <li><code>national_id</code> (string)</li>
+                    <li><code>role</code> (string)</li>
+                    <li><code>safety_score</code> (float)</li>
+                    <li><code>trips</code> (integer)</li>
+                    <li><code>licenseExpiration</code> (string, date)</li>
+                    <li><code>rank</code> (integer)</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/dashboard/employer/devices</span></h3>
+        <p><strong>Description:</strong> Retrieves specific hardware device details for the fleet.</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>devices</code> (array of objects):
+                <ul>
+                    <li><code>serial_number</code> (string)</li>
+                    <li><code>manufacturing_date</code> (string, date)</li>
+                    <li><code>active_employee_email</code> (string | null)</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/dashboard/employer/fleet-analysis</span></h3>
+        <p><strong>Description:</strong> Aggregated charts and summary for the entire fleet.</p>
+        <p><strong>Query Parameters:</strong></p>
+        <ul>
+            <li><code>timeframe</code> (string, required: "hour", "day", or "month")</li>
+            <li><code>target_date</code> (string, optional: e.g., "YYYY-MM-DD")</li>
+            <li><code>threshold</code> (float, required: default 0.75)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>summary_report</code> (object):
+                <ul>
+                    <li><code>total_employees</code> (integer)</li>
+                    <li><code>top_driver</code> (string | null)</li>
+                    <li><code>needs_attention</code> (string | null)</li>
+                    <li><code>total_trips</code> (integer)</li>
+                    <li><code>total_drive_time_mins</code> (float)</li>
+                    <li class="highlight-change"><code>total_risky_drive_time_mins</code> (float)</li>
+                    <li><code>alerts</code> (integer - calculated directly from raw unaggregated events)</li>
+                    <li><code>avg_driver_score</code> (float)</li>
+                    <li><code>avg_road_score</code> (float)</li>
+                    <li><code>avg_risk_score</code> (float)</li>
+                    <li class="highlight-change"><code>percentile_95th</code> (float - uses robust statistical ceiling)</li>
+                    <li><code>event_ratio</code> (float)</li>
+                    <li class="highlight-change"><code>significance</code> (string - e.g., "Significantly High Risk (p < 0.05)" derived via Z-Test)</li>
+                </ul>
+            </li>
+            <li><code>trend_chart</code> (array of objects: <code>timestamp</code> string, <code>score</code> float. Automatically 0.0-padded for frontend rendering).</li>
+            <li><code>distractions_split</code> (array of objects: <code>name</code> string, <code>value_percentage</code> float, <code>duration_minutes</code> float)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/dashboard/employer/drivers/{driver_email}/details</span></h3>
+        <p><strong>Description:</strong> Analytical charts and history for a specific driver.</p>
+        <p><strong>Path Parameters:</strong> <code>driver_email</code> (string)</p>
+        <p><strong>Query Parameters:</strong> <code>timeframe</code> (string), <code>target_date</code> (string | optional), <code>threshold</code> (float)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>driver_info</code> (object: name, national_id, status)</li>
+            <li><code>summary_report</code> (object: strictly mirrors the fleet-analysis summary keys above)</li>
+            <li><code>analysis</code> (object containing <code>trend_chart</code> and <code>distractions_split</code> arrays)</li>
+        </ul>
+    </div>
+
+    <h2>4. Dashboard - Driver</h2>
+    <p class="section-note">Requires Driver JWT in <code>Authorization: Bearer &lt;token&gt;</code> header</p>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/dashboard/driver/details</span></h3>
+        <p><strong>Description:</strong> Profile info, stats, charts, and pending requests for the logged-in driver.</p>
+        <p><strong>Query Parameters:</strong> <code>timeframe</code> (string), <code>target_date</code> (string | optional), <code>threshold</code> (float)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>profile</code> (object: driver_name, email, active_employers array)</li>
+            <li><code>summary_report</code> (object: strictly mirrors the fleet-analysis summary keys above)</li>
+            <li><code>analysis</code> (object: trend_chart, distractions_split)</li>
+            <li><code>pending_requests</code> (array of objects: request_id, employer_name)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/dashboard/driver/start-trip</span></h3>
+        <p><strong>Description:</strong> Assigns the driver to a specific car and starts trip sequence.</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>serial_number</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>device_id</code> (integer)</li>
+            <li><code>driver_id</code> (integer)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/dashboard/driver/end-trip</span></h3>
+        <p><strong>Description:</strong> Unassigns the driver from the vehicle.</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>serial_number</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/dashboard/driver/calibration/request-snapshot</span></h3>
+        <p><strong>Description:</strong> Driver clicks 'Capture Image' on web app to wake up the camera.</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>serial_number</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/dashboard/driver/calibration/snapshot/{serial_number}</span></h3>
+        <p><strong>Description:</strong> Fetches the latest camera frame for the frontend UI.</p>
+        <p><strong>Path Parameters:</strong> <code>serial_number</code> (string)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+             <li><code>snapshot_base64</code> (string)</li>
+             <li><code>detections</code> (array)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/dashboard/driver/calibration/save</span></h3>
+        <p><strong>Description:</strong> Saves lane nodes and physical attributes configured from the driver UI.</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>serial_number</code> (string)</li>
+             <li><code>calibration</code> (object)
+                 <ul>
+                     <li><code>mounting_height</code> (float)</li>
+                     <li><code>focal_distance</code> (float)</li>
+                     <li><code>ego_lane_nodes</code> (array of exactly 4 objects: <code>x</code> float, <code>y</code> float)</li>
+                     <li><code>selected_bbox</code> (object: <code>x1</code>, <code>y1</code>, <code>x2</code>, <code>y2</code> floats)</li>
+                 </ul>
+             </li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+        </ul>
+    </div>
+
+    <h2>5. Employment</h2>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/employment/employer/request</span></h3>
+        <p><strong>Description:</strong> Invites an independent driver to join a fleet. (Employer Auth)</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>driver_email</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+            <li><code>request_id</code> (integer)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/employment/driver/requests/{request_id}/respond</span></h3>
+        <p><strong>Description:</strong> Driver accepts or rejects an employment invitation. (Driver Auth)</p>
+        <p><strong>Path Parameters:</strong> <code>request_id</code> (integer)</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>status</code> (string: "Accepted" or "Rejected")</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/employment/driver/sever/{employer_email}</span></h3>
+        <p><strong>Description:</strong> Allows a driver to resign or disconnect from a fleet using the employer's email. (Driver Auth)</p>
+        <p><strong>Path Parameters:</strong> <code>employer_email</code> (string)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/employment/employer/sever/{driver_email}</span></h3>
+        <p><strong>Description:</strong> Allows an employer to remove a driver from their fleet using the driver's email. (Employer Auth)</p>
+        <p><strong>Path Parameters:</strong> <code>driver_email</code> (string)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <h2>6. Hardware Management & Integration</h2>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/internal/devices/provision</span></h3>
+        <p><strong>Description:</strong> Registers a newly manufactured device. (No Auth required currently)</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>serial_number</code> (string)</li>
+             <li><code>manufacturing_date</code> (string, date)</li>
+             <li><code>activation_pin</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/dashboard/employer/devices/claim</span></h3>
+        <p><strong>Description:</strong> Claims a device for an employer's fleet. (Employer Auth)</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>serial_number</code> (string)</li>
+             <li><code>activation_pin</code> (string)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/readings/batch</span></h3>
+        <p><strong>Description:</strong> Hardware uploads a batch file containing telemetry. (Hardware Auth)</p>
+        <p><strong>Headers:</strong> <code>x-api-key</code> (string, required)</p>
+        <p><strong>Request Body (JSON Array of Objects):</strong></p>
+        <ul>
+            <li><code>device_id</code> (integer)</li>
+            <li><code>driver_id</code> (integer)</li>
+            <li><code>timestamp</code> (string, ISO datetime, UTC)</li>
+            <li><code>driver_score</code>, <code>road_score</code>, <code>risk_score</code>, <code>urgency</code>, <code>proximity</code> (float)</li>
+            <li><code>road_objects_classes</code> (string)</li>
+            <li><code>gps_coordinates</code> (string | null)</li>
+            <li><span class="highlight-change"><code>driver_distraction_distribution</code> (object with 10 variables using 1/0 one-hot flags for current state)</span></li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/hardware/status</span></h3>
+        <p><strong>Description:</strong> Hardware polls for commands or an active driver. (Hardware Auth)</p>
+        <p><strong>Headers:</strong> <code>x-api-key</code> (string, required)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+             <li><code>status</code> (string: "waiting", "capture_snapshot", "fetch_calibration", "active")</li>
+             <li><code>driver_id</code> (integer | optional)</li>
+             <li><code>device_id</code> (integer | optional)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method post">POST</span><span class="path">/api/v1/hardware/calibration/snapshot</span></h3>
+        <p><strong>Description:</strong> Hardware uploads an image frame and bounding boxes. (Hardware Auth)</p>
+        <p><strong>Headers:</strong> <code>x-api-key</code> (string, required)</p>
+        <p><strong>Request Body (JSON):</strong></p>
+        <ul>
+             <li><code>snapshot_base64</code> (string)</li>
+             <li><code>detections</code> (array of objects: <code>x1</code>, <code>y1</code>, <code>x2</code>, <code>y2</code> all floats)</li>
+        </ul>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/hardware/calibration</span></h3>
+        <p><strong>Description:</strong> Hardware downloads the calibration JSON to save locally. (Hardware Auth)</p>
+        <p><strong>Headers:</strong> <code>x-api-key</code> (string, required)</p>
+        <p><strong>Response (200 OK):</strong> Returns the exact JSON <code>calibration</code> object saved.</p>
+    </div>
+
+    <h2>7. Data Management</h2>
+    <p class="section-note">Endpoints currently don't specify Auth guards in the router setup (Internal/Admin use)</p>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/readings/{device_id}/{driver_id}</span></h3>
+        <p><strong>Path Parameters:</strong> <code>device_id</code> (integer), <code>driver_id</code> (integer)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/device/{device_id}</span></h3>
+        <p><strong>Path Parameters:</strong> <code>device_id</code> (integer)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/employer/{employer_id}</span></h3>
+        <p><strong>Path Parameters:</strong> <code>employer_id</code> (integer)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/driver/{driver_id}</span></h3>
+        <p><strong>Path Parameters:</strong> <code>driver_id</code> (integer)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/requests/all</span></h3>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/readings/{device_id}/{driver_id}/all</span></h3>
+        <p><strong>Description:</strong> Fetches every single raw reading for a given device and driver pair.</p>
+        <p><strong>Path Parameters:</strong> <code>device_id</code> (integer), <code>driver_id</code> (integer)</p>
+        <p><strong>Response (200 OK):</strong> Array of all raw reading objects matching the <code>ReadingCreate</code> schema + <code>timestamp</code> as ISO string.</p>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method get">GET</span><span class="path">/api/v1/readings/{device_id}/{driver_id}/range</span></h3>
+        <p><strong>Description:</strong> <span class="highlight-change">NEW: Fetches readings within a specific ISO datetime window.</span></p>
+        <p><strong>Path Parameters:</strong> <code>device_id</code> (integer), <code>driver_id</code> (integer)</p>
+        <p><strong>Query Parameters:</strong> <code>start_time</code> (string, ISO datetime), <code>end_time</code> (string, ISO datetime)</p>
+        <p><strong>Response (200 OK):</strong> Array of all raw reading objects within the range matching the <code>ReadingCreate</code> schema + <code>timestamp</code> as ISO string.</p>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method delete">DELETE</span><span class="path">/api/v1/readings/{device_id}/{driver_id}/range</span></h3>
+        <p><strong>Description:</strong> Deletes readings within a specific datetime window.</p>
+        <p><strong>Path Parameters:</strong> <code>device_id</code> (integer), <code>driver_id</code> (integer)</p>
+        <p><strong>Query Parameters:</strong> <code>start_time</code> (string, ISO datetime), <code>end_time</code> (string, ISO datetime)</p>
+        <p><strong>Response (200 OK):</strong></p>
+        <ul>
+            <li><code>status</code> (string)</li>
+            <li><code>message</code> (string)</li>
+        </ul>
+    </div>
+
+</body>
+</html>
