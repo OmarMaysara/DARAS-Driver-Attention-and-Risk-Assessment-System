@@ -43,32 +43,41 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
   const vbRef    = useRef({ x: 0, y: 0, w: W, h: H });
   const [vb, setVb] = useState({ x: 0, y: 0, w: W, h: H });
   const scrubDrag = useRef<{ sx: number; ox: number } | null>(null);
+  const svgDrag   = useRef<{ sx: number; ox: number } | null>(null);
   const isZoomed  = vb.w < W * 0.99;
   const zoomPct   = Math.round(W / vb.w * 100);
 
   useEffect(() => {
     function onMove(e: MouseEvent) {
-      if (!scrubDrag.current || !scrubRef.current) return;
-      const rect = scrubRef.current.getBoundingClientRect();
-      const { w } = vbRef.current;
-      const dx = (e.clientX - scrubDrag.current.sx) / rect.width * W;
-      const next = { ...vbRef.current, x: Math.max(0, Math.min(W - w, scrubDrag.current.ox + dx)) };
-      vbRef.current = next; setVb(next);
+      if (scrubDrag.current && scrubRef.current) {
+        const rect = scrubRef.current.getBoundingClientRect();
+        const { w } = vbRef.current;
+        const dx = (e.clientX - scrubDrag.current.sx) / rect.width * W;
+        const next = { ...vbRef.current, x: Math.max(0, Math.min(W - w, scrubDrag.current.ox + dx)) };
+        vbRef.current = next; setVb(next);
+      }
+      if (svgDrag.current && svgRef.current) {
+        const rect = svgRef.current.getBoundingClientRect();
+        const { w } = vbRef.current;
+        const dx = -(e.clientX - svgDrag.current.sx) / rect.width * w;
+        const next = { ...vbRef.current, x: Math.max(0, Math.min(W - w, svgDrag.current.ox + dx)) };
+        vbRef.current = next; setVb(next);
+      }
     }
-    function onUp() { scrubDrag.current = null; }
+    function onUp() { scrubDrag.current = null; svgDrag.current = null; }
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
   function zoomBy(factor: number) {
-    const { x, y, w, h } = vbRef.current;
+    const { x, w } = vbRef.current;
     const newW = Math.max(150, Math.min(W, w * factor));
-    const newH = newW * (H / W);
     const next = {
-      x: Math.max(0, Math.min(W - newW, (x + w/2) - newW/2)),
-      y: Math.max(0, Math.min(H - newH, (y + h/2) - newH/2)),
-      w: newW, h: newH,
+      x: Math.max(0, Math.min(W - newW, (x + w / 2) - newW / 2)),
+      y: 0,
+      w: newW,
+      h: H,
     };
     vbRef.current = next; setVb(next);
   }
@@ -99,14 +108,18 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
   const CW = W - PL - PR, CH = H - PT - PB;
   const maxVal = Math.max(...data, threshold / 100) > 0.5 ? 1.0 : (Math.max(...data, threshold / 100) > 0.3 ? 0.5 : 0.3);
   const thY = PT + CH - ((threshold / 100) / maxVal) * CH;
-  const pts = data.map((v, i) => ({
-    x: PL + (i / (data.length - 1 || 1)) * CW,
-    y: PT + CH - (v / maxVal) * CH,
-    label: labels[i] || "",
-  }));
+  const pts = data.map((v, i) => {
+    const origX = data.length > 1 ? (i / (data.length - 1)) * W : W / 2;
+    const x = PL + ((origX - vb.x) / vb.w) * CW;
+    const y = PT + CH - (v / maxVal) * CH;
+    const inView = x >= PL && x <= W - PR;
+    return { x, y, label: labels[i] || "", inView };
+  });
   const dLine = pts.reduce((acc, p, i) => i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, "");
   const dArea = `${dLine} L ${pts[pts.length-1]?.x || 0} ${PT+CH} L ${pts[0]?.x || 0} ${PT+CH} Z`;
   const ticks = maxVal === 1.0 ? [0,.2,.4,.6,.8,1.0] : maxVal === 0.5 ? [0,.1,.2,.3,.4,.5] : [0,.1,.2,.3];
+  const visibleCount = Math.max(1, (vb.w / W) * data.length);
+  const labelStep = Math.max(1, Math.ceil(visibleCount / 8));
 
   return (
     <div className="relative w-full h-full flex flex-col pt-4 min-h-0">
@@ -124,58 +137,75 @@ function FleetLineChart({ trendChart, picker, onPickerChange, threshold, setThre
             className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500" />
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-            <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">ΓêÆ</button>
+          <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden shadow-sm" title="Zoom the timeline to inspect risk scores in detail">
+            <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-blue-100 hover:text-blue-600 font-black text-lg leading-none disabled:opacity-20 transition-all">−</button>
             <span className="text-[9px] font-black text-slate-400 w-9 text-center tabular-nums">{zoomPct}%</span>
-            <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">+</button>
+            <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-blue-100 hover:text-blue-600 font-black text-lg leading-none disabled:opacity-20 transition-all">+</button>
           </div>
           {isZoomed && (
-            <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">Γå║ Reset</button>
+            <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">↙ Reset</button>
           )}
         </div>
       </div>
-      <div className="relative flex-1 w-full mt-4 min-h-0">
-        <svg ref={svgRef} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
+      <div className="relative flex-1 w-full mt-4 min-h-0" title="Scroll to zoom · drag to pan">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible cursor-grab active:cursor-grabbing"
+          onWheel={e => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1 / 0.85 : 0.85); }}
+          onMouseDown={e => { e.preventDefault(); svgDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+        >
           <defs>
             <linearGradient id="fleetGrad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor="#3b82f6" />
               <stop offset="100%" stopColor="transparent" />
             </linearGradient>
+            <clipPath id="fleet-chart-clip">
+              <rect x={PL} y={0} width={CW} height={H} />
+            </clipPath>
           </defs>
-          <path d={dArea} fill="url(#fleetGrad)" opacity="0.15" />
           {ticks.map(v => {
             const y = PT + CH - (v / maxVal) * CH;
             return <line key={v} x1={PL} y1={y} x2={W-PR} y2={y} stroke="#f1f5f9" strokeWidth="1" />;
           })}
           <line x1={PL} y1={thY} x2={W-PR} y2={thY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
-          <path d={dLine} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          {pts.map((p, i) => (
-            <g key={i}>
-              <circle cx={p.x} cy={p.y} r="5" fill="white" stroke="#3b82f6" strokeWidth="3" />
-              <line x1={p.x} y1={PT+CH} x2={p.x} y2={PT+CH+5} stroke="#cbd5e1" strokeWidth="2" />
-              <text x={p.x} y={PT+CH+22} textAnchor="middle" fontSize="11" fill="#64748b" fontWeight="600">{p.label}</text>
-            </g>
-          ))}
-          <line x1={PL} y1={PT} x2={PL} y2={PT+CH} stroke="#cbd5e1" strokeWidth="2" />
-          <line x1={PL} y1={PT+CH} x2={W-PR} y2={PT+CH} stroke="#cbd5e1" strokeWidth="2" />
+          <g clipPath="url(#fleet-chart-clip)">
+            <path d={dArea} fill="url(#fleetGrad)" opacity="0.15" />
+            <path d={dLine} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+            {pts.map((p, i) => {
+              if (!p.inView) return null;
+              const showLabel = i % labelStep === 0 || i === pts.length - 1;
+              return (
+                <g key={i}>
+                  {showLabel && <line x1={p.x} y1={PT+CH} x2={p.x} y2={PT+CH+5} stroke="#cbd5e1" strokeWidth="2" />}
+                  {showLabel && <text x={p.x} y={PT+CH+22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
+                </g>
+              );
+            })}
+          </g>
+          <line x1={PL} y1={PT} x2={PL} y2={PT+CH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
+          <line x1={PL} y1={PT+CH} x2={W-PR} y2={PT+CH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
           {ticks.map(v => {
             const y = PT + CH - (v / maxVal) * CH;
             return (
               <g key={`lbl-${v}`}>
                 <line x1={PL-5} y1={y} x2={PL} y2={y} stroke="#cbd5e1" strokeWidth="2" />
-                <text x={PL-12} y={y} textAnchor="end" dominantBaseline="central" fontSize="11" fill="#64748b" fontWeight="600">{Math.round(v*100)}%</text>
+                <text x={PL-12} y={y} textAnchor="end" dominantBaseline="central" fontSize="11" className="fill-slate-600 font-black">{Math.round(v*100)}%</text>
               </g>
             );
           })}
-          <text x={25} y={PT+CH/2} transform={`rotate(-90 25 ${PT+CH/2})`} textAnchor="middle" fontSize="12" fill="#94a3b8" fontWeight="700">Risk Score</text>
+          <text x={25} y={PT+CH/2} transform={`rotate(-90 25 ${PT+CH/2})`} textAnchor="middle" fontSize="12" className="fill-slate-400 font-black uppercase tracking-[0.2em]">Risk Score</text>
         </svg>
         {isZoomed && (
-          <div ref={scrubRef} className="mx-10 mb-3 h-2 bg-slate-100 rounded-full relative cursor-pointer">
-            <div
-              className="absolute top-0 h-full bg-blue-400 rounded-full hover:bg-blue-500 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
-              style={{ left: `${(vb.x/W)*100}%`, width: `${(vb.w/W)*100}%` }}
-              onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
-            />
+          <div className="mx-10 mb-2 space-y-1">
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Drag to pan timeline:</p>
+            <div ref={scrubRef} className="h-2.5 bg-gradient-to-r from-slate-100 to-slate-50 rounded-full relative cursor-pointer border border-slate-200 shadow-sm">
+              <div
+                className="absolute top-0 h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full hover:from-blue-500 hover:to-blue-600 cursor-grab active:cursor-grabbing transition-colors shadow-md"
+                style={{ left: `${(vb.x/W)*100}%`, width: `${(vb.w/W)*100}%` }}
+                onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -202,7 +232,7 @@ function FleetDistractionsDonut({ distractions }: { distractions: any[] }) {
 
   return (
     <div className="relative w-full h-full flex items-center justify-center">
-      <svg viewBox="0 0 300 300" className="w-full h-full max-h-[220px] drop-shadow-md overflow-visible">
+      <svg viewBox="0 0 300 300" className="w-full h-full max-h-[300px] drop-shadow-md overflow-visible">
         {allDistractions.map((d: any, i: number) => {
            const angle = (d.value / total) * Math.PI * 2;
            const x1 = cx + R * Math.cos(currentAngle);
@@ -242,9 +272,9 @@ function FleetDistractionsDonut({ distractions }: { distractions: any[] }) {
                    y={ly} 
                    textAnchor={isRight ? "start" : "end"} 
                    dominantBaseline="middle" 
-                   fontSize="10" 
-                   fontWeight="bold" 
-                   fill="#1e293b" 
+                   fontSize="13"
+                   fontWeight="bold"
+                   fill="#1e293b"
                    className="drop-shadow-sm pointer-events-none"
                  >
                    {d.type.split(" ")[0]} {d.value}%
@@ -340,9 +370,18 @@ export default function ReportsPage() {
         const baseUrl = new URL(eid ? `${API_ENDPOINTS.REPORTS}?employer_id=${eid}` : API_ENDPOINTS.REPORTS);
         baseUrl.searchParams.append("timeframe", selectedTimeframe);
         baseUrl.searchParams.append("threshold", (debouncedThreshold / 100).toString());
-        if (startDate)             baseUrl.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
-        if (endDate)               baseUrl.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
-        if (selectedHour !== null) baseUrl.searchParams.append("hour", String(selectedHour));
+        if (startDate) {
+          const yr = startDate.getFullYear();
+          const mo = String(startDate.getMonth() + 1).padStart(2, "0");
+          const dy = String(startDate.getDate()).padStart(2, "0");
+          const localDate = `${yr}-${mo}-${dy}`;
+          let targetDate = localDate;
+          if (selectedTimeframe === "hour" && selectedHour !== null)
+            targetDate = `${localDate} ${String(selectedHour).padStart(2, "0")}`;
+          else if (selectedTimeframe === "month")
+            targetDate = `${yr}-${mo}`;
+          baseUrl.searchParams.append("target_date", targetDate);
+        }
 
         const resF = await fetch(baseUrl.toString(), { headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS } });
         if (resF.ok) {
@@ -459,7 +498,7 @@ export default function ReportsPage() {
         ) : (
           <>
             {/* ΓöÇΓöÇ Line Chart Card ΓöÇΓöÇ */}
-            <div className="bg-white rounded-[1.5rem] border border-blue-50 shadow-sm mb-6 overflow-hidden fp" style={{ height: 280 }}>
+            <div className="bg-white rounded-[1.5rem] border border-blue-50 shadow-sm mb-6 fp" style={{ height: 280 }}>
               <FleetLineChart trendChart={fleetAnalysis?.trend_chart || []} picker={picker} onPickerChange={setPicker} threshold={thresholdScore} setThreshold={setThresholdScore} />
             </div>
 

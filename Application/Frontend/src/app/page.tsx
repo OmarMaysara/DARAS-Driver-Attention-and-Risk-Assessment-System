@@ -94,16 +94,6 @@ export default function Home() {
         </div>
       </section>
 
-      <section style={{ position: "relative", zIndex: 5, display: "flex", justifyContent: "center", flexWrap: "wrap", gap: 0, margin: "0 24px", background: "rgba(255,255,255,0.7)", border: "1px solid rgba(147,197,253,0.3)", borderRadius: 20, padding: "24px 16px", backdropFilter: "blur(12px)", boxShadow: "0 4px 24px -4px rgba(37,99,235,0.08)", animation: "hero-in 0.7s ease 0.5s both" }}>
-        <Stat value="99%" label="Detection Accuracy" />
-        <div style={{ width: 1, background: "rgba(147,197,253,0.4)", margin: "0 4px" }} />
-        <Stat value="&lt;200ms" label="Response Time" />
-        <div style={{ width: 1, background: "rgba(147,197,253,0.4)", margin: "0 4px" }} />
-        <Stat value="6+" label="Risk Event Types" />
-        <div style={{ width: 1, background: "rgba(147,197,253,0.4)", margin: "0 4px" }} />
-        <Stat value="24/7" label="Always On" />
-      </section>
-
       <section style={{ position: "relative", zIndex: 5, padding: "52px 28px 28px", maxWidth: 980, margin: "0 auto", width: "100%", animation: "hero-in 0.7s ease 0.6s both" }}>
         <p style={{ textAlign: "center", fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.14em", color: "#3b82f6", marginBottom: 12 }}>Platform Capabilities</p>
         <h2 style={{ textAlign: "center", margin: "0 0 36px", fontSize: "clamp(22px,4vw,32px)", fontWeight: 800, color: "#0f172a", fontFamily: "var(--font-display,inherit)", letterSpacing: "-0.025em" }}>Built for every journey</h2>

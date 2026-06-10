@@ -29,32 +29,41 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const vbRef    = useRef({ x: 0, y: 0, w: CHART_W, h: CHART_H });
   const [vb, setVb] = useState({ x: 0, y: 0, w: CHART_W, h: CHART_H });
   const scrubDrag = useRef<{ sx: number; ox: number } | null>(null);
+  const svgDrag   = useRef<{ sx: number; ox: number } | null>(null);
   const isZoomed  = vb.w < CHART_W * 0.99;
   const zoomPct   = Math.round(CHART_W / vb.w * 100);
 
   useEffect(() => {
     function onMove(e: MouseEvent) {
-      if (!scrubDrag.current || !scrubRef.current) return;
-      const rect = scrubRef.current.getBoundingClientRect();
-      const { w } = vbRef.current;
-      const dx = (e.clientX - scrubDrag.current.sx) / rect.width * CHART_W;
-      const next = { ...vbRef.current, x: Math.max(0, Math.min(CHART_W - w, scrubDrag.current.ox + dx)) };
-      vbRef.current = next; setVb(next);
+      if (scrubDrag.current && scrubRef.current) {
+        const rect = scrubRef.current.getBoundingClientRect();
+        const { w } = vbRef.current;
+        const dx = (e.clientX - scrubDrag.current.sx) / rect.width * CHART_W;
+        const next = { ...vbRef.current, x: Math.max(0, Math.min(CHART_W - w, scrubDrag.current.ox + dx)) };
+        vbRef.current = next; setVb(next);
+      }
+      if (svgDrag.current && svgRef.current) {
+        const rect = svgRef.current.getBoundingClientRect();
+        const { w } = vbRef.current;
+        const dx = -(e.clientX - svgDrag.current.sx) / rect.width * w;
+        const next = { ...vbRef.current, x: Math.max(0, Math.min(CHART_W - w, svgDrag.current.ox + dx)) };
+        vbRef.current = next; setVb(next);
+      }
     }
-    function onUp() { scrubDrag.current = null; }
+    function onUp() { scrubDrag.current = null; svgDrag.current = null; }
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
   function zoomBy(factor: number) {
-    const { x, y, w, h } = vbRef.current;
+    const { x, w } = vbRef.current;
     const newW = Math.max(150, Math.min(CHART_W, w * factor));
-    const newH = newW * (CHART_H / CHART_W);
     const next = {
-      x: Math.max(0, Math.min(CHART_W - newW, (x + w/2) - newW/2)),
-      y: Math.max(0, Math.min(CHART_H - newH, (y + h/2) - newH/2)),
-      w: newW, h: newH,
+      x: Math.max(0, Math.min(CHART_W - newW, (x + w / 2) - newW / 2)),
+      y: 0,
+      w: newW,
+      h: CHART_H,
     };
     vbRef.current = next; setVb(next);
   }
@@ -87,9 +96,18 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         const baseUrl = new URL(API_ENDPOINTS.DRIVER_DETAILS(employee.email || "unknown"));
         baseUrl.searchParams.append("timeframe", selectedTimeframe);
         baseUrl.searchParams.append("threshold", (debouncedThreshold / 100).toString());
-        if (startDate)             baseUrl.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
-        if (endDate)               baseUrl.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
-        if (selectedHour !== null) baseUrl.searchParams.append("hour", String(selectedHour));
+        if (startDate) {
+          const yr = startDate.getFullYear();
+          const mo = String(startDate.getMonth() + 1).padStart(2, "0");
+          const dy = String(startDate.getDate()).padStart(2, "0");
+          const localDate = `${yr}-${mo}-${dy}`;
+          let targetDate = localDate;
+          if (selectedTimeframe === "hour" && selectedHour !== null)
+            targetDate = `${localDate} ${String(selectedHour).padStart(2, "0")}`;
+          else if (selectedTimeframe === "month")
+            targetDate = `${yr}-${mo}`;
+          baseUrl.searchParams.append("target_date", targetDate);
+        }
         
         const res = await fetch(baseUrl.toString(), {
           headers: {
@@ -209,21 +227,22 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     const chartH = H - PAD_T - PAD_B;
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data = riskTrends.map((d: any) => (100 - d.score) / 100);
+    const data = riskTrends.map((d: any) => d.score / 100);
     const threshold = thresholdScore / 100;
     const maxData = data.length > 0 ? Math.max(...data, threshold) : threshold;
     const maxVal = maxData > 0.5 ? 1.0 : (maxData > 0.3 ? 0.5 : 0.3);
     const thresholdY = PAD_T + chartH - (threshold / maxVal) * chartH;
 
     const points = data.map((val: number, i: number) => {
-      const x = data.length > 1
-        ? PAD_L + (i / (data.length - 1)) * chartW
-        : PAD_L + chartW / 2;
+      const origX = data.length > 1 ? (i / (data.length - 1)) * W : W / 2;
+      const x = PAD_L + ((origX - vb.x) / vb.w) * chartW;
       const y = PAD_T + chartH - (val / maxVal) * chartH;
-      return { x, y, label: riskTrends[i].label };
+      const inView = x >= PAD_L && x <= W - PAD_R;
+      return { x, y, label: riskTrends[i].label, inView };
     });
 
-    const labelStep = Math.max(1, Math.ceil(points.length / 8));
+    const visibleCount = Math.max(1, (vb.w / CHART_W) * data.length);
+    const labelStep = Math.max(1, Math.ceil(visibleCount / 8));
 
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -273,28 +292,35 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
              />
            </div>
-           <div className="flex items-center gap-1.5">
-             <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden">
-               <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">ΓêÆ</button>
+           <div className="flex items-center gap-2">
+             <div className="flex items-center bg-slate-50 rounded-full border border-slate-100 overflow-hidden shadow-sm" title="Zoom the timeline to inspect risk scores in detail">
+               <button onClick={() => zoomBy(1/0.6)} disabled={!isZoomed} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-blue-100 hover:text-blue-600 font-black text-lg leading-none disabled:opacity-20 transition-all" title="Zoom out">−</button>
                <span className="text-[9px] font-black text-slate-400 w-9 text-center tabular-nums">{zoomPct}%</span>
-               <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-7 h-7 flex items-center justify-center text-slate-400 hover:bg-blue-50 hover:text-blue-600 font-black text-base leading-none disabled:opacity-25 transition-colors">+</button>
+               <button onClick={() => zoomBy(0.6)} disabled={vb.w <= 155} className="w-8 h-8 flex items-center justify-center text-slate-400 hover:bg-blue-100 hover:text-blue-600 font-black text-lg leading-none disabled:opacity-20 transition-all">+</button>
              </div>
              {isZoomed && (
-               <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">Γå║ Reset</button>
+               <button onClick={resetZoom} className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-[9px] font-black uppercase tracking-widest border border-slate-200 hover:bg-blue-50 hover:text-blue-600 transition-colors">↙ Reset</button>
              )}
            </div>
         </div>
 
-        <div className="relative flex-1 w-full mt-4 min-h-0">
-          <svg ref={svgRef} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
-            {/* Area under the line */}
+        <div className="relative flex-1 w-full mt-4 min-h-0" title="Scroll to zoom · drag to pan">
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${W} ${H}`}
+            className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible cursor-grab active:cursor-grabbing"
+            onWheel={e => { e.preventDefault(); zoomBy(e.deltaY > 0 ? 1 / 0.85 : 0.85); }}
+            onMouseDown={e => { e.preventDefault(); svgDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+          >
             <defs>
               <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3b82f6" />
                 <stop offset="100%" stopColor="transparent" />
               </linearGradient>
+              <clipPath id="modal-chart-clip">
+                <rect x={PAD_L} y={0} width={chartW} height={H} />
+              </clipPath>
             </defs>
-            <path d={areaD} fill="url(#lineGradient)" opacity="0.15" />
 
             {/* Grid lines (horizontal) */}
             {(maxVal === 1.0 ? [0, 0.2, 0.4, 0.6, 0.8, 1.0] : maxVal === 0.5 ? [0, 0.1, 0.2, 0.3, 0.4, 0.5] : [0, 0.1, 0.2, 0.3]).map((val) => {
@@ -307,31 +333,30 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
             {/* Threshold Line */}
             <line x1={PAD_L} y1={thresholdY} x2={W-PAD_R} y2={thresholdY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
 
-
-            {/* Data Line */}
-            <path d={d} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-
-            {/* Points and X-axis Labels */}
-            {points.map((p: {x: number, y: number, label: string}, i: number) => {
-              const showLabel = timeRange === "Hour"
-                ? (riskTrends[i] as any).showLabel === true
-                : i % labelStep === 0 || i === points.length - 1;
-              return (
-                <g key={`pt-${i}`}>
-                  {timeRange !== "Hour" && <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />}
-                  {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
-                  {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
-                </g>
-              );
-            })}
+            <g clipPath="url(#modal-chart-clip)">
+              <path d={areaD} fill="url(#lineGradient)" opacity="0.15" />
+              <path d={d} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+              {points.map((p: {x: number, y: number, label: string, inView: boolean}, i: number) => {
+                if (!p.inView) return null;
+                const showLabel = timeRange === "Hour"
+                  ? (riskTrends[i] as any).showLabel === true
+                  : i % labelStep === 0 || i === points.length - 1;
+                return (
+                  <g key={`pt-${i}`}>
+                    {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
+                    {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
+                  </g>
+                );
+              })}
+            </g>
 
             {/* Y Axis Line */}
             <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
-            
+
             {/* X Axis Line */}
             <line x1={PAD_L} y1={PAD_T + chartH} x2={W-PAD_R} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
 
-            {/* Y Axis Ticks and Labels (Drawn last so they are on top) */}
+            {/* Y Axis Ticks and Labels */}
             {(maxVal === 1.0 ? [0, 0.2, 0.4, 0.6, 0.8, 1.0] : maxVal === 0.5 ? [0, 0.1, 0.2, 0.3, 0.4, 0.5] : [0, 0.1, 0.2, 0.3]).map((val) => {
               const y = PAD_T + chartH - (val / maxVal) * chartH;
               return (
@@ -341,19 +366,22 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                 </g>
               );
             })}
-            
+
             {/* Y Axis Label */}
             <text x={25} y={PAD_T + chartH / 2} transform={`rotate(-90 25 ${PAD_T + chartH / 2})`} textAnchor="middle" fontSize="12" className="fill-slate-400 font-black uppercase tracking-[0.2em]">
               Risk Score
             </text>
           </svg>
           {isZoomed && (
-            <div ref={scrubRef} className="mx-10 mb-3 h-2 bg-slate-100 rounded-full relative cursor-pointer">
-              <div
-                className="absolute top-0 h-full bg-blue-400 rounded-full hover:bg-blue-500 cursor-grab active:cursor-grabbing transition-colors shadow-sm"
-                style={{ left: `${(vb.x/CHART_W)*100}%`, width: `${(vb.w/CHART_W)*100}%` }}
-                onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
-              />
+            <div className="mx-10 mb-2 space-y-1">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Drag to pan timeline:</p>
+              <div ref={scrubRef} className="h-2.5 bg-gradient-to-r from-slate-100 to-slate-50 rounded-full relative cursor-pointer border border-slate-200 shadow-sm">
+                <div
+                  className="absolute top-0 h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full hover:from-blue-500 hover:to-blue-600 cursor-grab active:cursor-grabbing transition-colors shadow-md"
+                  style={{ left: `${(vb.x/CHART_W)*100}%`, width: `${(vb.w/CHART_W)*100}%` }}
+                  onMouseDown={e => { e.preventDefault(); scrubDrag.current = { sx: e.clientX, ox: vbRef.current.x }; }}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -368,7 +396,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     const total = allDistractions.reduce((sum, d) => sum + d.value, 0);
     return (
       <div className="relative w-full h-full flex items-center justify-center">
-        <svg viewBox="0 0 300 300" className="w-full h-full max-h-[220px] drop-shadow-md overflow-visible">
+        <svg viewBox="0 0 300 300" className="w-full h-full max-h-[300px] drop-shadow-md overflow-visible">
           {allDistractions.map((d, i) => {
              const angle = (d.value / total) * Math.PI * 2;
              const x1 = cx + R * Math.cos(currentAngle);
@@ -403,14 +431,14 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                    className="transition-all hover:opacity-80 cursor-pointer hover:scale-[1.02] origin-center" 
                  />
                  {d.value >= 5 && (
-                   <text 
-                     x={lx} 
-                     y={ly} 
-                     textAnchor={isRight ? "start" : "end"} 
-                     dominantBaseline="middle" 
-                     fontSize="10" 
-                     fontWeight="bold" 
-                     fill="#1e293b" 
+                   <text
+                     x={lx}
+                     y={ly}
+                     textAnchor={isRight ? "start" : "end"}
+                     dominantBaseline="middle"
+                     fontSize="13"
+                     fontWeight="bold"
+                     fill="#1e293b"
                      className="drop-shadow-sm pointer-events-none"
                    >
                      {d.type.split(" ")[0]} {d.value}%
@@ -499,7 +527,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         <div className="p-6 sm:p-8 overflow-y-auto flex-1">
           
           {/* Top Chart Section */}
-          <div className="h-[280px] w-full rounded-[1.5rem] bg-white border border-blue-50 shadow-sm mb-6 overflow-hidden relative group transition-shadow hover:shadow-md">
+          <div className="h-[280px] w-full rounded-[1.5rem] bg-white border border-blue-50 shadow-sm mb-6 relative group transition-shadow hover:shadow-md">
              <LineChart />
           </div>
 

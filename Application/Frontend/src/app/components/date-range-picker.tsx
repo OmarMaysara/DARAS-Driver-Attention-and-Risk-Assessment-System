@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Calendar, Clock, ArrowLeft } from "lucide-react";
 
 export type TimeframeMode = "hour" | "day" | "week" | "month";
@@ -124,21 +125,31 @@ export function DateRangePicker({ startDate, endDate, timeframe, hour, onChange 
   const [viewDate, setViewDate] = useState(()=> startDate ?? new Date());
   const [hourDay, setHourDay]   = useState<Date|null>(null); // day chosen in hour-mode step1
   const [hoverDay, setHoverDay] = useState<Date|null>(null);
-  const ref = useRef<HTMLDivElement>(null);
+  const [dropPos, setDropPos]   = useState({ top: 0, left: 0 });
+  const ref     = useRef<HTMLDivElement>(null);
+  const trigRef = useRef<HTMLDivElement>(null);
+
+  const reposition = useCallback(() => {
+    if (!trigRef.current) return;
+    const r = trigRef.current.getBoundingClientRect();
+    setDropPos({ top: r.bottom + 8, left: r.left });
+  }, []);
 
   /* sync mode with incoming prop */
   useEffect(()=>{ setMode(timeframe || "week"); }, [timeframe]);
 
-  /* close on outside click */
+  /* reposition and close on outside click */
   useEffect(()=>{
+    if(open) reposition();
     function handler(e: MouseEvent){
-      if(ref.current && !ref.current.contains(e.target as Node)){
-        setOpen(false); setHourDay(null);
-      }
+      const t = e.target as Node;
+      const inTrig = trigRef.current?.contains(t);
+      const inDrop = ref.current?.contains(t);
+      if(!inTrig && !inDrop){ setOpen(false); setHourDay(null); }
     }
     if(open) document.addEventListener("mousedown", handler);
     return ()=> document.removeEventListener("mousedown", handler);
-  },[open]);
+  },[open, reposition]);
 
   const y = viewDate.getFullYear();
   const m = viewDate.getMonth();
@@ -204,9 +215,10 @@ export function DateRangePicker({ startDate, endDate, timeframe, hour, onChange 
   ];
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative">
       {/* trigger */}
       <div
+        ref={trigRef}
         onClick={()=>{ setOpen(!open); setHourDay(null); }}
         className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold border border-blue-100 flex items-center gap-1.5 cursor-pointer hover:bg-blue-100 transition-colors whitespace-nowrap"
       >
@@ -214,8 +226,11 @@ export function DateRangePicker({ startDate, endDate, timeframe, hour, onChange 
         {label()}
       </div>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-2 bg-white border border-blue-100 rounded-2xl shadow-xl z-[200] p-4 w-[280px] select-none">
+      {open && typeof document !== "undefined" && createPortal(
+        <div
+          ref={ref}
+          style={{ position: "fixed", top: dropPos.top, left: dropPos.left, zIndex: 9999 }}
+          className="bg-white border border-blue-100 rounded-2xl shadow-xl p-4 w-[280px] select-none">
 
           {/* mode tabs */}
           <div className="flex gap-1 mb-4 bg-slate-50 rounded-xl p-1">
@@ -341,7 +356,8 @@ export function DateRangePicker({ startDate, endDate, timeframe, hour, onChange 
             )}
           </div>
 
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

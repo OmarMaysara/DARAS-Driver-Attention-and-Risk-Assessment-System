@@ -241,9 +241,20 @@ function DonutChart({ distractions }: { distractions: any[] }) {
   const cx = 150, cy = 150, R = 90, r = 35;
   const total = distractions.reduce((sum, d) => sum + d.value, 0);
 
+  if (distractions.length === 0 || total === 0) {
+    return (
+      <div className="relative w-full h-full flex flex-col items-center justify-center gap-2">
+        <svg viewBox="0 0 300 300" className="w-full max-h-[260px] opacity-10">
+          <circle cx={cx} cy={cy} r={R} fill="none" stroke="#94a3b8" strokeWidth="55" />
+        </svg>
+        <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest -mt-8">No trips recorded yet</p>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-full flex items-center justify-center">
-      <svg viewBox="0 0 300 300" className="w-full h-full max-h-[220px] drop-shadow-md overflow-visible">
+      <svg viewBox="0 0 300 300" className="w-full h-full max-h-[300px] drop-shadow-md overflow-visible">
         {distractions.map((d, i) => {
            const angle = (d.value / total) * Math.PI * 2;
            const x1 = cx + R * Math.cos(currentAngle), y1 = cy + R * Math.sin(currentAngle);
@@ -262,7 +273,7 @@ function DonutChart({ distractions }: { distractions: any[] }) {
              <g key={i}>
                <path d={pathD} fill={d.color} stroke="#fff" strokeWidth="2" className="transition-all hover:opacity-80 cursor-pointer hover:scale-[1.02] origin-center" />
                {d.value >= 5 && (
-                 <text x={lx} y={ly} textAnchor={isRight ? "start" : "end"} dominantBaseline="middle" fontSize="10" fontWeight="bold" fill="#1e293b" className="drop-shadow-sm pointer-events-none">
+                 <text x={lx} y={ly} textAnchor={isRight ? "start" : "end"} dominantBaseline="middle" fontSize="13" fontWeight="bold" fill="#1e293b" className="drop-shadow-sm pointer-events-none">
                    {d.type.split(" ")[0]} {d.value}%
                  </text>
                )}
@@ -275,6 +286,14 @@ function DonutChart({ distractions }: { distractions: any[] }) {
 }
 
 function HorizontalBarChart({ distractions }: { distractions: any[] }) {
+  if (distractions.length === 0) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+        <p className="text-[11px] font-black text-slate-300 uppercase tracking-widest">No trips recorded yet</p>
+        <p className="text-[10px] font-bold text-slate-200 uppercase tracking-wider">Duration data will appear here</p>
+      </div>
+    );
+  }
   const maxVal = Math.max(...distractions.map(d => d.duration));
   return (
     <div className="w-full h-full flex flex-col justify-center py-2">
@@ -383,8 +402,13 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
     total_drive_time_mins: apiStats.total_drive_time_mins,
     total_driving_time: apiStats.total_drive_time_mins ? apiStats.total_drive_time_mins / 60 : undefined,
     safe_driving_time: apiStats.total_safe_drive_time_mins ? apiStats.total_safe_drive_time_mins / 60 : undefined,
-    avg_driver_score: apiStats.avg_driver_score ? Math.round(apiStats.avg_driver_score * 100) : undefined,
-    percentile_95th: apiStats.percentile_95th ? Math.round(apiStats.percentile_95th * 100) : undefined,
+    total_trips: apiStats.total_trips,
+    total_risky_drive_time_mins: apiStats.total_risky_drive_time_mins,
+    alerts: apiStats.alerts,
+    avg_risk_score: apiStats.avg_risk_score,
+    avg_driver_score: apiStats.avg_driver_score,
+    avg_road_score: apiStats.avg_road_score,
+    percentile_95th: apiStats.percentile_95th,
     event_ratio: apiStats.event_ratio,
     significance: apiStats.significance,
   } : null);
@@ -432,14 +456,6 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
   const colorPalette = ["#3b82f6", "#ef4444", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
   const rawDistractions = analysis?.distractions_split ?? null;
 
-  const defaultDistractions = [
-    { type: "Phone call",      value: 35, color: "#3b82f6", duration: 420 },
-    { type: "Texting",         value: 25, color: "#ef4444", duration: 180 },
-    { type: "Talking",         value: 15, color: "#8b5cf6", duration: 150 },
-    { type: "Reaching Behind", value: 12, color: "#f59e0b", duration: 95  },
-    { type: "Drinking water",  value: 8,  color: "#06b6d4", duration: 65  },
-  ];
-
   const distractions = (rawDistractions && rawDistractions.length > 0)
     ? rawDistractions.map((d: any, i: number) => {
         const name = d.name ?? d.type ?? d.label ?? `Type ${i + 1}`;
@@ -450,7 +466,7 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
           duration: d.duration_minutes !== undefined ? Math.round(d.duration_minutes * 60) : (d.duration ?? 0),
         };
       })
-    : defaultDistractions;
+    : [];
 
   // ========== Daily Report Stats ==========
   // ========== Daily Report Stats ==========
@@ -461,18 +477,18 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
       ? Math.round((dr.total_driving_time - dr.safe_driving_time) / dr.total_driving_time * 100)
       : undefined;
   
-  const fmt = (val: number | undefined | null) => val != null ? `${Math.round(val * 100)}%` : "–";
+  const fmt = (val: number | undefined | null) => val != null ? `${Math.round(val * 100)}%` : "0%";
 
   const reportStats = [
-    { label: "Total Trips",            value: dr?.total_trips             !== undefined ? `${dr.total_trips} Trips`                                          : "–" },
-    { label: "Total Drive Time",       value: dr?.total_drive_time_mins   !== undefined ? `${dr.total_drive_time_mins} Min`                                  : "– Min" },
-    { label: "Risky Drive Time",       value: dr?.total_risky_drive_time_mins !== undefined ? `${dr.total_risky_drive_time_mins} Min`                        : "– Min" },
-    { label: "Alerts",                 value: dr?.alerts                  !== undefined ? `${dr.alerts} Alert${dr.alerts !== 1 ? "s" : ""}`                  : "–" },
-    { label: "Avg Risk Score",         value: fmt(dr?.avg_risk_score)   },
-    { label: "Avg Driver Score",       value: fmt(dr?.avg_driver_score) },
-    { label: "Avg Road Score",         value: fmt(dr?.avg_road_score)   },
-    { label: "95th Percentile",        value: dr?.percentile_95th !== undefined ? `${Math.round(dr.percentile_95th * 100)}%` : "–" },
-    { label: "Event Ratio",            value: dr?.event_ratio     !== undefined ? `${Math.round(dr.event_ratio * 100)}%`     : "–" },
+    { label: "Total Trips",      value: dr?.total_trips                 !== undefined ? `${dr.total_trips} Trips`                                         : "0 Trips" },
+    { label: "Total Drive Time", value: dr?.total_drive_time_mins       !== undefined ? `${dr.total_drive_time_mins} Min`                                 : "0 Min"   },
+    { label: "Risky Drive Time", value: dr?.total_risky_drive_time_mins !== undefined ? `${dr.total_risky_drive_time_mins} Min`                           : "0 Min"   },
+    { label: "Alerts",           value: dr?.alerts                      !== undefined ? `${dr.alerts} Alert${dr.alerts !== 1 ? "s" : ""}`                 : "0 Alerts"},
+    { label: "Avg Risk Score",   value: fmt(dr?.avg_risk_score)   },
+    { label: "Avg Driver Score", value: fmt(dr?.avg_driver_score) },
+    { label: "Avg Road Score",   value: fmt(dr?.avg_road_score)   },
+    { label: "95th Percentile",  value: dr?.percentile_95th !== undefined ? `${Math.round(dr.percentile_95th * 100)}%` : "0%" },
+    { label: "Event Ratio",      value: dr?.event_ratio     !== undefined ? `${Math.round(dr.event_ratio * 100)}%`     : "0%" },
   ];
 
   const download = () => {
@@ -646,10 +662,10 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
       {/* Quick Access Info – live from stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
-          { icon: <Route className="text-blue-500" />,         label: "Safety Score",  val: apiStats?.score       !== undefined ? `${Math.round(apiStats.score * 100)}%`               : "–" },
-          { icon: <MapPin className="text-blue-500" />,        label: "Total Trips",   val: apiStats?.total_trips !== undefined ? `${apiStats.total_trips} Trips`      : "–" },
-          { icon: <Clock className="text-blue-500" />,         label: "Safe Hours",    val: apiStats?.total_safe_drive_time_mins !== undefined ? `${Math.round(apiStats.total_safe_drive_time_mins / 60)} Hrs` : "–" },
-          { icon: <AlertTriangle className="text-blue-500" />, label: "Alerts Today",  val: apiStats?.alerts      !== undefined ? `${apiStats.alerts} Alert${apiStats.alerts !== 1 ? "s" : ""}` : "–" },
+          { icon: <Route className="text-blue-500" />,         label: "Safety Score",  val: apiStats?.score       !== undefined ? `${Math.round(apiStats.score * 100)}%`               : "0%" },
+          { icon: <MapPin className="text-blue-500" />,        label: "Total Trips",   val: apiStats?.total_trips !== undefined ? `${apiStats.total_trips} Trips`      : "0 Trips" },
+          { icon: <Clock className="text-blue-500" />,         label: "Safe Hours",    val: apiStats?.total_safe_drive_time_mins !== undefined ? `${Math.round(apiStats.total_safe_drive_time_mins / 60)} Hrs` : "0 Hrs" },
+          { icon: <AlertTriangle className="text-blue-500" />, label: "Alerts Today",  val: apiStats?.alerts      !== undefined ? `${apiStats.alerts} Alert${apiStats.alerts !== 1 ? "s" : ""}` : "0 Alerts" },
         ].map(i => (
           <div key={i.label} className="bg-white/50 border border-blue-50 rounded-2xl p-4 flex items-center gap-4">
             <div className="p-2 bg-white rounded-xl shadow-sm">{i.icon}</div>
