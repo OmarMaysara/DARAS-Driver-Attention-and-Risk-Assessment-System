@@ -174,7 +174,11 @@ def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], target_d
     query = db.query(entities.Reading).filter(entities.Reading.driver_id.in_(driver_ids))
     
     if target_date:
-        query = query.filter(entities.Reading.timestamp.like(f"{target_date}%"))
+    from sqlalchemy import cast, Date, func
+    date_part = target_date.split(" ")[0]  # handles "2026-06-12" or "2026-06-12 14"
+    query = query.filter(
+        func.cast(entities.Reading.timestamp, Date) == date_part
+    )
         
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
