@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowRight, Check, ShieldCheck, Loader2, AlertCircle, Camera } from "lucide-react";
@@ -51,7 +51,7 @@ function StepBar({ step }: { step: Step }) {
   );
 }
 
-export default function CalibrationPage() {
+function CalibrationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Serial is session-scoped: set by the driver in their profile panel each login
@@ -579,5 +579,21 @@ export default function CalibrationPage() {
         </div>
       </main>
     </div>
+  );
+}
+import { Suspense } from "react";
+
+export default function CalibrationPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Loading Calibration...</p>
+        </div>
+      </div>
+    }>
+      <CalibrationPageContent />
+    </Suspense>
   );
 }
