@@ -161,19 +161,11 @@ def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: s
     query = db.query(entities.Reading).filter(entities.Reading.driver_id == driver_id)
     
     if target_date:
-    from sqlalchemy import cast, Date, func
-    date_part = target_date.split(" ")[0]  # handles "2026-06-12" or "2026-06-12 14"
-    from datetime import datetime, timedelta
-
-    # Assuming target_date is a string like "2026-06-12"
-    start_date = datetime.strptime(target_date, "%Y-%m-%d")
-    end_date = start_date + timedelta(days=1)
-    
-    # GOOD: Use range filtering on the timestamp object
-    query = query.filter(
-        entities.Reading.timestamp >= start_date,
-        entities.Reading.timestamp < end_date
-    )
+        from sqlalchemy import cast, Date, func
+        date_part = target_date.split(" ")[0]  # handles "2026-06-12" or "2026-06-12 14"
+        query = query.filter(
+            func.cast(entities.Reading.timestamp, Date) == date_part
+        )
         
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
@@ -182,19 +174,11 @@ def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], target_d
     query = db.query(entities.Reading).filter(entities.Reading.driver_id.in_(driver_ids))
     
     if target_date:
-    from sqlalchemy import cast, Date, func
-    date_part = target_date.split(" ")[0]  # handles "2026-06-12" or "2026-06-12 14"
-    from datetime import datetime, timedelta
-
-    # Assuming target_date is a string like "2026-06-12"
-    start_date = datetime.strptime(target_date, "%Y-%m-%d")
-    end_date = start_date + timedelta(days=1)
-    
-    # GOOD: Use range filtering on the timestamp object
-    query = query.filter(
-        entities.Reading.timestamp >= start_date,
-        entities.Reading.timestamp < end_date
-    )
+        from sqlalchemy import cast, Date, func
+        date_part = target_date.split(" ")[0]  # handles "2026-06-12" or "2026-06-12 14"
+        query = query.filter(
+            func.cast(entities.Reading.timestamp, Date) == date_part
+        )
         
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
