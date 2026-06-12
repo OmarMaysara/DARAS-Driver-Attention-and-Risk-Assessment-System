@@ -422,19 +422,14 @@ export default function CalibrationPage() {
                   alt="Calibration frame"
                   className="absolute inset-0 w-full h-full object-cover"
                   draggable={false}
+                  onLoad={e => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) {
+                      setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+                    }
+                  }}
                 />
               )}
-                alt="Calibration frame"
-                className="absolute inset-0 w-full h-full object-cover"
-                draggable={false}
-                onLoad={e => {
-                  const img = e.currentTarget;
-                  if (img.naturalWidth && img.naturalHeight) {
-                    setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
-                  }
-                }}
-              />
-
               {/* Dark gradient overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-blue-950/20 to-transparent pointer-events-none" />
 
