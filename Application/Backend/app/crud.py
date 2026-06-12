@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from app.models import entities
 from app.schemas import payloads
 from datetime import datetime
+from sqlalchemy import cast, Date, func
 
 # ==========================================
 # 1. USERS (EMPLOYERS & DRIVERS)
@@ -157,15 +158,14 @@ def get_readings_for_driver(db: Session, driver_id: int, limit: int = 100):
     ).order_by(desc(entities.Reading.timestamp)).limit(limit).all()
 
 def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: str = None, limit: int = 10000):
-    """Retrieves recent readings for a specific driver with optional date filtering."""
     query = db.query(entities.Reading).filter(entities.Reading.driver_id == driver_id)
     
     if target_date:
-        # Properly parse the date string once
-        start_date = datetime.strptime(target_date, "%Y-%m-%d")
+        # Properly indented logic
+        date_part = target_date.split(" ")[0]
+        start_date = datetime.strptime(date_part, "%Y-%m-%d")
         end_date = start_date + timedelta(days=1)
         
-        # Use explicit range filtering
         query = query.filter(
             entities.Reading.timestamp >= start_date,
             entities.Reading.timestamp < end_date
