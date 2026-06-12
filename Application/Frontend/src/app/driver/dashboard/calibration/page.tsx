@@ -416,15 +416,14 @@ export default function CalibrationPage() {
             >
               {/* Base image */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                {imageUrl && (
-                  <img
-                      src={imageUrl}
-                      alt="Calibration frame"
-                      className="absolute inset-0 w-full h-full object-cover"
-                      draggable={false}
-                    />
-                  )}
+              {imageUrl && (
+                <img
+                  src={imageUrl}
+                  alt="Calibration frame"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  draggable={false}
+                />
+              )}
                 alt="Calibration frame"
                 className="absolute inset-0 w-full h-full object-cover"
                 draggable={false}
