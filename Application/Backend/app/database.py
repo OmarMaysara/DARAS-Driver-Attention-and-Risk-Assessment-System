@@ -17,8 +17,8 @@ if db_url.startswith("postgres://") or db_url.startswith("postgresql://"):
     
     # Strip out any trailing query parameters causing the "supa" error
     if "?" in db_url:
-        # Splits URL at '?' and takes only the base connection string
         db_url = db_url.split("?")[0]
+        db_url += "?sslmode=require"
 
 # 3. Configure connect_args based on database type
 connect_args = {}
