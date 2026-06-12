@@ -161,10 +161,11 @@ def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: s
     query = db.query(entities.Reading).filter(entities.Reading.driver_id == driver_id)
     
     if target_date:
-        # Properly indented logic
+        # Properly parse the date string once
         start_date = datetime.strptime(target_date, "%Y-%m-%d")
         end_date = start_date + timedelta(days=1)
         
+        # Use explicit range filtering
         query = query.filter(
             entities.Reading.timestamp >= start_date,
             entities.Reading.timestamp < end_date
@@ -173,11 +174,10 @@ def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: s
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
 def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], target_date: str = None, limit: int = 20000):
-    """Retrieves recent readings across multiple drivers for fleet-wide analysis with optional date filtering."""
+    """Retrieves recent readings across multiple drivers with optional date filtering."""
     query = db.query(entities.Reading).filter(entities.Reading.driver_id.in_(driver_ids))
     
     if target_date:
-        # Properly indented logic
         start_date = datetime.strptime(target_date, "%Y-%m-%d")
         end_date = start_date + timedelta(days=1)
         
