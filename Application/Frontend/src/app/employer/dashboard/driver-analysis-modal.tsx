@@ -454,19 +454,22 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
   // --- Horizontal Bar Chart ---
   const HorizontalBarChart = () => {
-    const maxVal = Math.max(...allDistractions.map(d => d.duration));
-    
+    const bars = allDistractions.filter(d => !d.type.toLowerCase().includes("safe"));
+    const maxVal = bars.length > 0 ? Math.max(...bars.map(d => d.duration)) : 1;
+    const fmtDuration = (secs: number) =>
+      secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+
     return (
       <div className="w-full h-full flex flex-col justify-center py-2">
          <div className="flex-1 flex flex-col justify-center gap-4 relative">
-           {allDistractions.slice(0, 5).map((d, i) => (
+           {bars.slice(0, 5).map((d, i) => (
              <div key={i} className="flex items-center h-8 group w-full">
-               <div 
-                 className="h-full rounded-r-lg flex items-center px-3 text-white text-[11px] font-black transition-all shadow-sm whitespace-nowrap overflow-visible" 
+               <div
+                 className="h-full rounded-r-lg flex items-center px-3 text-slate-900 text-[11px] font-black transition-all shadow-sm whitespace-nowrap overflow-visible"
                  style={{ width: `${Math.max((d.duration / maxVal) * 100, 15)}%`, backgroundColor: d.color }}
                >
-                 <span className="drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] z-10">{d.type}</span>
-                 <span className="ml-auto pl-3 drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] z-10">{d.duration}s</span>
+                 <span className="drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] z-10">{d.type}</span>
+                 <span className="ml-auto pl-3 drop-shadow-[0_1px_2px_rgba(255,255,255,0.7)] z-10">{fmtDuration(d.duration)}</span>
                </div>
              </div>
            ))}
@@ -534,11 +537,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
           {/* Bottom Panels Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 auto-rows-fr">
              
-             {/* Panel 1: Daily Report */}
+             {/* Panel 1: Driver Statistics */}
              <div className="rounded-[1.5rem] bg-white border border-blue-50 shadow-sm p-6 flex flex-col transition-shadow hover:shadow-md">
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-1.5 h-4 bg-blue-500 rounded-full" />
-                  <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Daily Report</h2>
+                  <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Driver Statistics</h2>
                 </div>
                 
                 <div className="flex-1 flex flex-col justify-between text-[13px] font-bold text-slate-600">
@@ -583,7 +586,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
              <div className="rounded-[1.5rem] bg-white border border-blue-50 shadow-sm p-6 flex flex-col transition-shadow hover:shadow-md">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
-                  <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Duration per Type</h2>
+                  <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Top Distraction Times</h2>
                 </div>
                 
                 <div className="flex-1 w-full relative">
