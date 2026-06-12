@@ -581,8 +581,6 @@ function CalibrationPageContent() {
     </div>
   );
 }
-import { Suspense } from "react";
-
 export default function CalibrationPage() {
   return (
     <Suspense fallback={
