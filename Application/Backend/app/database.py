@@ -6,22 +6,22 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 1. Look for the Supabase integration variable first, then fallback to local SQLite
-SQLALCHEMY_DATABASE_URL = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL") or "sqlite:///./adas.db"
+# 1. Fall back to local SQLite if POSTGRES_URL isn't found (like on your local machine)
+SQLALCHEMY_DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./adas.db")
 
-# 2. Fix the protocol naming quirk (SQLAlchemy 1.4+ requires 'postgresql://' instead of 'postgres://')
+# 2. Fix the driver prefix for SQLAlchemy if using PostgreSQL
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# 3. Configure connection arguments dynamically
-# 'connect_args' is required for SQLite multi-threading but throws an error if passed to PostgreSQL
+# 3. Configure connect_args only if we are using SQLite
+connect_args = {}
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(
-        SQLALCHEMY_DATABASE_URL, 
-        connect_args={"check_same_thread": False}
-    )
-else:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+    connect_args = {"check_same_thread": False}
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args=connect_args
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
