@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://daras-backend-22r11v8kd-omarmaysaras-projects.vercel.app";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://daras-backend-ocubu1xqj-omarmaysaras-projects.vercel.app/api/v1";
 
 export const API_ENDPOINTS = {
   LOGIN: `${API_BASE_URL}/api/v1/employer/login`,
