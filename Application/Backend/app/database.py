@@ -1,27 +1,32 @@
 """
-Core database configuration and session management for the ADAS backend.
-Initializes the SQLAlchemy engine and base models.
+Core database configuration and session management for the DARAS backend.
+Handles switching between production PostgreSQL (Supabase) and local SQLite.
 """
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 1. Fall back to local SQLite if POSTGRES_URL isn't found (like on your local machine)
-SQLALCHEMY_DATABASE_URL = os.getenv("POSTGRES_URL", "sqlite:///./adas.db")
+# 1. Fetch connection string (defaults to local SQLite if empty)
+db_url = os.getenv("POSTGRES_URL", "sqlite:///./adas.db")
 
-# 2. Fix the driver prefix for SQLAlchemy if using PostgreSQL
-if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
-    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+# 2. If it's a production Postgres URL, sanitize and clean it up
+if db_url.startswith("postgres://") or db_url.startswith("postgresql://"):
+    # SQLAlchemy requires 'postgresql://' instead of 'postgres://'
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    
+    # Strip out any trailing query parameters causing the "supa" error
+    if "?" in db_url:
+        # Splits URL at '?' and takes only the base connection string
+        db_url = db_url.split("?")[0]
 
-# 3. Configure connect_args only if we are using SQLite
+# 3. Configure connect_args based on database type
 connect_args = {}
-if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
-    connect_args=connect_args
-)
+# Initialize engine
+engine = create_engine(db_url, connect_args=connect_args)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
