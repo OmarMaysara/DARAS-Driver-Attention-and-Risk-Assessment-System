@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from sqlalchemy.dialects.sqlite import insert
 import secrets
-
+from datetime import datetime, timedelta
 from app.models import entities
 from app.schemas import payloads
 from datetime import datetime
@@ -161,10 +161,13 @@ def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: s
     query = db.query(entities.Reading).filter(entities.Reading.driver_id == driver_id)
     
     if target_date:
-        from sqlalchemy import cast, Date, func
-        date_part = target_date.split(" ")[0]  # handles "2026-06-12" or "2026-06-12 14"
+        # Properly indented logic
+        start_date = datetime.strptime(target_date, "%Y-%m-%d")
+        end_date = start_date + timedelta(days=1)
+        
         query = query.filter(
-            func.cast(entities.Reading.timestamp, Date) == date_part
+            entities.Reading.timestamp >= start_date,
+            entities.Reading.timestamp < end_date
         )
         
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
@@ -174,10 +177,13 @@ def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], target_d
     query = db.query(entities.Reading).filter(entities.Reading.driver_id.in_(driver_ids))
     
     if target_date:
-        from sqlalchemy import cast, Date, func
-        date_part = target_date.split(" ")[0]  # handles "2026-06-12" or "2026-06-12 14"
+        # Properly indented logic
+        start_date = datetime.strptime(target_date, "%Y-%m-%d")
+        end_date = start_date + timedelta(days=1)
+        
         query = query.filter(
-            func.cast(entities.Reading.timestamp, Date) == date_part
+            entities.Reading.timestamp >= start_date,
+            entities.Reading.timestamp < end_date
         )
         
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
