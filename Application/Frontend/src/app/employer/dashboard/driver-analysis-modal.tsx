@@ -33,19 +33,37 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const zoomPct   = Math.round(CHART_W / vb.w * 100);
 
   useEffect(() => {
-    function onMove(e: MouseEvent) {
-      if (!scrubDrag.current || !scrubRef.current) return;
-      const rect = scrubRef.current.getBoundingClientRect();
-      const { w } = vbRef.current;
-      const dx = (e.clientX - scrubDrag.current.sx) / rect.width * CHART_W;
-      const next = { ...vbRef.current, x: Math.max(0, Math.min(CHART_W - w, scrubDrag.current.ox + dx)) };
-      vbRef.current = next; setVb(next);
+  setMounted(true);
+  setReportData(null); // clear stale data immediately on date change
+
+  const controller = new AbortController();
+
+  async function fetchReport() {
+    try {
+      const { API_ENDPOINTS, COMMON_HEADERS, getDriverAuthToken } = await import("@/lib/api-config");
+      const token = getDriverAuthToken();
+
+      const url = new URL(API_ENDPOINTS.DRIVER_DASHBOARD_DETAILS);
+      url.searchParams.append("timeframe", selectedTimeframe);
+      url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+      if (startDate)             url.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
+      if (endDate)               url.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
+      if (selectedHour !== null) url.searchParams.append("hour", String(selectedHour));
+
+      const res = await fetch(url.toString(), {
+        signal: controller.signal, // cancels this fetch if the effect re-runs
+        headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS },
+      });
+      if (res.ok) setReportData(await res.json());
+    } catch (err: any) {
+      if (err.name !== "AbortError") console.error(err); // ignore intentional cancellations
     }
-    function onUp() { scrubDrag.current = null; }
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, []);
+  }
+
+  fetchReport();
+  return () => controller.abort(); // cancel in-flight request on every re-run
+
+}, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
 
   function zoomBy(factor: number) {
     const { x, y, w, h } = vbRef.current;
