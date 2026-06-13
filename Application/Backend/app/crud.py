@@ -4,7 +4,7 @@ Contains all direct database interactions (Create, Read, Update, Delete) using S
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
-from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.dialects.postgresql import insert
 import secrets
 from datetime import datetime, timedelta
 from app.models import entities
