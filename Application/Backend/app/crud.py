@@ -157,35 +157,31 @@ def get_readings_for_driver(db: Session, driver_id: int, limit: int = 100):
         entities.Reading.driver_id == driver_id
     ).order_by(desc(entities.Reading.timestamp)).limit(limit).all()
 
+def _parse_date_range(target_date: str):
+    """Returns (start, end) datetime tuple for both YYYY-MM and YYYY-MM-DD formats."""
+    date_part = target_date.split(" ")[0]
+    if len(date_part) == 7:  # YYYY-MM  — month scope
+        start = datetime.strptime(date_part, "%Y-%m")
+        # First moment of the next month = exclusive upper bound
+        end = (start.replace(month=start.month + 1) if start.month < 12
+               else start.replace(year=start.year + 1, month=1))
+    else:                    # YYYY-MM-DD — day scope
+        start = datetime.strptime(date_part, "%Y-%m-%d")
+        end = start + timedelta(days=1)
+    return start, end
+
 def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: str = None, limit: int = 10000):
     query = db.query(entities.Reading).filter(entities.Reading.driver_id == driver_id)
-    
     if target_date:
-        # Properly indented logic
-        date_part = target_date.split(" ")[0]
-        start_date = datetime.strptime(date_part, "%Y-%m-%d")
-        end_date = start_date + timedelta(days=1)
-        
-        query = query.filter(
-            entities.Reading.timestamp >= start_date,
-            entities.Reading.timestamp < end_date
-        )
-        
+        start, end = _parse_date_range(target_date)
+        query = query.filter(entities.Reading.timestamp >= start, entities.Reading.timestamp < end)
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
 def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], target_date: str = None, limit: int = 20000):
-    """Retrieves recent readings across multiple drivers with optional date filtering."""
     query = db.query(entities.Reading).filter(entities.Reading.driver_id.in_(driver_ids))
-    
     if target_date:
-        start_date = datetime.strptime(target_date, "%Y-%m-%d")
-        end_date = start_date + timedelta(days=1)
-        
-        query = query.filter(
-            entities.Reading.timestamp >= start_date,
-            entities.Reading.timestamp < end_date
-        )
-        
+        start, end = _parse_date_range(target_date)
+        query = query.filter(entities.Reading.timestamp >= start, entities.Reading.timestamp < end)
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
 
 def create_readings_batch(db: Session, readings: list[payloads.ReadingCreate]):
