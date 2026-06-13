@@ -109,24 +109,33 @@ async def get_employer_devices(db: Session = Depends(get_db), current_employer =
 
 @router.get("/dashboard/employer/fleet-analysis", tags=["Dashboard - Employer"])
 async def get_fleet_analysis(
-    timeframe: str = Query("day", description="Grouping timeframe: hour, day, month"),
-    target_date: str | None = Query(None, description="Optional target date for filtering, e.g., '2026-06-04' or '2026-06'"),
-    threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
-    db: Session = Depends(get_db), 
-    current_employer = Depends(get_current_employer)
+    timeframe: str = Query("day"),
+    target_date: str | None = Query(None),
+    start_date: str | None = Query(None),   # ← add these two
+    end_date:   str | None = Query(None),   # ← (end_date used below)
+    threshold: float = Query(0.75),
+    db: Session = Depends(get_db),
+    current_driver = Depends(get_current_driver)
 ):
+    # start_date from the picker takes precedence over legacy target_date
+    effective_date = start_date or target_date
+    return operations.get_full_driver_dashboard(db, current_driver, timeframe, effective_date, threshold)
     """Returns top-level summary plus aggregated charts for the entire fleet."""
     return operations.get_fleet_wide_analysis(db, current_employer.employer_id, timeframe, target_date, threshold)
 
 @router.get("/dashboard/employer/drivers/{driver_email}/details", tags=["Dashboard - Employer"])
 async def get_driver_detailed_view(
-    driver_email: str, 
-    timeframe: str = Query("day", description="Grouping timeframe: hour, day, month"),
-    target_date: str | None = Query(None, description="Optional target date for filtering, e.g., '2026-06-04' or '2026-06'"),
-    threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
-    db: Session = Depends(get_db), 
-    current_employer = Depends(get_current_employer)
+    timeframe: str = Query("day"),
+    target_date: str | None = Query(None),
+    start_date: str | None = Query(None),   # ← add these two
+    end_date:   str | None = Query(None),   # ← (end_date used below)
+    threshold: float = Query(0.75),
+    db: Session = Depends(get_db),
+    current_driver = Depends(get_current_driver)
 ):
+    # start_date from the picker takes precedence over legacy target_date
+    effective_date = start_date or target_date
+    return operations.get_full_driver_dashboard(db, current_driver, timeframe, effective_date, threshold)
     """Returns in-depth analytical charts and history for a specific driver."""
     details = operations.get_driver_detailed_dashboard(db, driver_email, current_employer.employer_id, timeframe, target_date, threshold)
     if not details: 
@@ -139,12 +148,17 @@ async def get_driver_detailed_view(
 
 @router.get("/dashboard/driver/details", tags=["Dashboard - Driver"])
 async def get_driver_dashboard(
-    timeframe: str = Query("day", description="Grouping timeframe: hour, day, month"),
-    target_date: str | None = Query(None, description="Optional target date for filtering, e.g., '2026-06-04' or '2026-06'"),
-    threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
-    db: Session = Depends(get_db), 
+    timeframe: str = Query("day"),
+    target_date: str | None = Query(None),
+    start_date: str | None = Query(None),   # ← add these two
+    end_date:   str | None = Query(None),   # ← (end_date used below)
+    threshold: float = Query(0.75),
+    db: Session = Depends(get_db),
     current_driver = Depends(get_current_driver)
 ):
+    # start_date from the picker takes precedence over legacy target_date
+    effective_date = start_date or target_date
+    return operations.get_full_driver_dashboard(db, current_driver, timeframe, effective_date, threshold)
     """BFF Endpoint: Returns profile info, quick stats, analytical charts, and pending requests in one call."""
     return operations.get_full_driver_dashboard(db, current_driver, timeframe, target_date, threshold)
 
