@@ -47,39 +47,6 @@ function LineChart({ riskTrends, thresholdScore, timeRange, pickerValue, onPicke
   const isZoomed  = vb.w < W * 0.99;
   const zoomPct   = Math.round(W / vb.w * 100);
 
-  useEffect(() => {
-  setMounted(true);
-  setReportData(null); // clear stale data immediately on date change
-
-  const controller = new AbortController();
-
-  async function fetchReport() {
-    try {
-      const { API_ENDPOINTS, COMMON_HEADERS, getDriverAuthToken } = await import("@/lib/api-config");
-      const token = getDriverAuthToken();
-
-      const url = new URL(API_ENDPOINTS.DRIVER_DASHBOARD_DETAILS);
-      url.searchParams.append("timeframe", selectedTimeframe);
-      url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
-      if (startDate)             url.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
-      if (endDate)               url.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
-      if (selectedHour !== null) url.searchParams.append("hour", String(selectedHour));
-
-      const res = await fetch(url.toString(), {
-        signal: controller.signal, // cancels this fetch if the effect re-runs
-        headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS },
-      });
-      if (res.ok) setReportData(await res.json());
-    } catch (err: any) {
-      if (err.name !== "AbortError") console.error(err); // ignore intentional cancellations
-    }
-  }
-
-  fetchReport();
-  return () => controller.abort(); // cancel in-flight request on every re-run
-
-}, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
-
   function zoomBy(factor: number) {
     const { x, y, w, h } = vbRef.current;
     const newW = Math.max(150, Math.min(W, w * factor));
@@ -309,16 +276,36 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
 
   // Debounce the slider value so we don't spam the API on every pixel drag
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedThreshold(thresholdScore), 500);
-    return () => clearTimeout(timer);
-  }, [thresholdScore]);
+  setMounted(true);
+  setReportData(null);
 
-  useEffect(() => {
-    setMounted(true);
-    async function fetchReport() {
-      try {
-        const { API_ENDPOINTS, COMMON_HEADERS, getDriverAuthToken } = await import("@/lib/api-config");
-        const token = getDriverAuthToken();
+  const controller = new AbortController();
+
+  async function fetchReport() {
+    try {
+      const { API_ENDPOINTS, COMMON_HEADERS, getDriverAuthToken } = await import("@/lib/api-config");
+      const token = getDriverAuthToken();
+
+      const url = new URL(API_ENDPOINTS.DRIVER_DASHBOARD_DETAILS);
+      url.searchParams.append("timeframe", selectedTimeframe);
+      url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+      if (startDate)             url.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
+      if (endDate)               url.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
+      if (selectedHour !== null) url.searchParams.append("hour", String(selectedHour));
+
+      const res = await fetch(url.toString(), {
+        signal: controller.signal,
+        headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS },
+      });
+      if (res.ok) setReportData(await res.json());
+    } catch (err: any) {
+      if (err.name !== "AbortError") console.error(err);
+    }
+  }
+
+  fetchReport();
+  return () => controller.abort();
+}, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
         
         // Append dynamic filters to the endpoint
         const url = new URL(API_ENDPOINTS.DRIVER_DASHBOARD_DETAILS);
