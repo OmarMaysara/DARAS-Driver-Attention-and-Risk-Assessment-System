@@ -32,39 +32,6 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const isZoomed  = vb.w < CHART_W * 0.99;
   const zoomPct   = Math.round(CHART_W / vb.w * 100);
 
-  useEffect(() => {
-  setMounted(true);
-  setReportData(null); // clear stale data immediately on date change
-
-  const controller = new AbortController();
-
-  async function fetchReport() {
-    try {
-      const { API_ENDPOINTS, COMMON_HEADERS, getDriverAuthToken } = await import("@/lib/api-config");
-      const token = getDriverAuthToken();
-
-      const url = new URL(API_ENDPOINTS.DRIVER_DASHBOARD_DETAILS);
-      url.searchParams.append("timeframe", selectedTimeframe);
-      url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
-      if (startDate)             url.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
-      if (endDate)               url.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
-      if (selectedHour !== null) url.searchParams.append("hour", String(selectedHour));
-
-      const res = await fetch(url.toString(), {
-        signal: controller.signal, // cancels this fetch if the effect re-runs
-        headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS },
-      });
-      if (res.ok) setReportData(await res.json());
-    } catch (err: any) {
-      if (err.name !== "AbortError") console.error(err); // ignore intentional cancellations
-    }
-  }
-
-  fetchReport();
-  return () => controller.abort(); // cancel in-flight request on every re-run
-
-}, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
-
   function zoomBy(factor: number) {
     const { x, y, w, h } = vbRef.current;
     const newW = Math.max(150, Math.min(CHART_W, w * factor));
@@ -97,36 +64,34 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   }, []);
 
   useEffect(() => {
-    // Fetch real driver report data
-    async function fetchReport() {
-      try {
-        const { getEmployerAuthToken, API_ENDPOINTS, COMMON_HEADERS } = await import("@/lib/api-config");
-        const token = getEmployerAuthToken();
-        const baseUrl = new URL(API_ENDPOINTS.DRIVER_DETAILS(employee.email || "unknown"));
-        baseUrl.searchParams.append("timeframe", selectedTimeframe);
-        baseUrl.searchParams.append("threshold", (debouncedThreshold / 100).toString());
-        if (startDate)             baseUrl.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
-        if (endDate)               baseUrl.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
-        if (selectedHour !== null) baseUrl.searchParams.append("hour", String(selectedHour));
-        
-        const res = await fetch(baseUrl.toString(), {
-          headers: {
-            "Authorization": token ? `Bearer ${token}` : "",
-            ...COMMON_HEADERS
-          }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setReportData(data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch driver report:", err);
-      }
-    }
-    
-    fetchReport();
-  }, [employee.email, debouncedThreshold, selectedTimeframe, startDate, endDate, selectedHour]);
+  setReportData(null);
 
+  const controller = new AbortController();
+
+  async function fetchReport() {
+    try {
+      const { getEmployerAuthToken, API_ENDPOINTS, COMMON_HEADERS } = await import("@/lib/api-config");
+      const token = getEmployerAuthToken();
+      const url = new URL(API_ENDPOINTS.DRIVER_DETAILS(employee.email || "unknown"));
+      url.searchParams.append("timeframe", selectedTimeframe);
+      url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+      if (startDate)             url.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
+      if (endDate)               url.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
+      if (selectedHour !== null) url.searchParams.append("hour", String(selectedHour));
+
+      const res = await fetch(url.toString(), {
+        signal: controller.signal,
+        headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS },
+      });
+      if (res.ok) setReportData(await res.json());
+    } catch (err: any) {
+      if (err.name !== "AbortError") console.error("Failed to fetch driver report:", err);
+    }
+  }
+
+  fetchReport();
+  return () => controller.abort();
+}, [employee.email, debouncedThreshold, selectedTimeframe, startDate, endDate, selectedHour]);
   if (!mounted) return null;
 
   // --- Dynamic Data based on employee or fetched report ---
