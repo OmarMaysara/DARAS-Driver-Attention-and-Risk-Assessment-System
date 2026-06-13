@@ -111,34 +111,35 @@ async def get_employer_devices(db: Session = Depends(get_db), current_employer =
 async def get_fleet_analysis(
     timeframe: str = Query("day"),
     target_date: str | None = Query(None),
-    start_date: str | None = Query(None),   # ← add these two
-    end_date:   str | None = Query(None),   # ← (end_date used below)
+    start_date: str | None = Query(None),
+    end_date:   str | None = Query(None),
     threshold: float = Query(0.75),
     db: Session = Depends(get_db),
-    current_driver = Depends(get_current_driver)
+    current_employer = Depends(get_current_employer)          # was get_current_driver
 ):
-    # start_date from the picker takes precedence over legacy target_date
-    effective_date = start_date or target_date
-    return operations.get_full_driver_dashboard(db, current_driver, timeframe, effective_date, threshold)
     """Returns top-level summary plus aggregated charts for the entire fleet."""
-    return operations.get_fleet_wide_analysis(db, current_employer.employer_id, timeframe, target_date, threshold)
+    effective_date = start_date or target_date
+    return operations.get_fleet_wide_analysis(                # was get_full_driver_dashboard
+        db, current_employer.employer_id, timeframe, effective_date, threshold
+    )
 
 @router.get("/dashboard/employer/drivers/{driver_email}/details", tags=["Dashboard - Employer"])
 async def get_driver_detailed_view(
+    driver_email: str,                                        # was missing entirely
     timeframe: str = Query("day"),
     target_date: str | None = Query(None),
-    start_date: str | None = Query(None),   # ← add these two
-    end_date:   str | None = Query(None),   # ← (end_date used below)
+    start_date: str | None = Query(None),
+    end_date:   str | None = Query(None),
     threshold: float = Query(0.75),
     db: Session = Depends(get_db),
-    current_driver = Depends(get_current_driver)
+    current_employer = Depends(get_current_employer)          # was get_current_driver
 ):
-    # start_date from the picker takes precedence over legacy target_date
-    effective_date = start_date or target_date
-    return operations.get_full_driver_dashboard(db, current_driver, timeframe, effective_date, threshold)
     """Returns in-depth analytical charts and history for a specific driver."""
-    details = operations.get_driver_detailed_dashboard(db, driver_email, current_employer.employer_id, timeframe, target_date, threshold)
-    if not details: 
+    effective_date = start_date or target_date
+    details = operations.get_driver_detailed_dashboard(       # was get_full_driver_dashboard
+        db, driver_email, current_employer.employer_id, timeframe, effective_date, threshold
+    )
+    if not details:
         raise HTTPException(status_code=404, detail="Driver not found in your fleet")
     return details
 
