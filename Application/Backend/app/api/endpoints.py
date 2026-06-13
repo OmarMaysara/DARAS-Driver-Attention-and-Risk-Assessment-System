@@ -159,8 +159,6 @@ async def get_driver_dashboard(
 ):
     # start_date from the picker takes precedence over legacy target_date
     effective_date = start_date or target_date
-    return operations.get_full_driver_dashboard(db, current_driver, timeframe, effective_date, threshold)
-    """BFF Endpoint: Returns profile info, quick stats, analytical charts, and pending requests in one call."""
     return operations.get_full_driver_dashboard(db, current_driver, timeframe, target_date, threshold)
 
 @router.post("/dashboard/driver/start-trip", tags=["Dashboard - Driver"])
