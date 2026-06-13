@@ -283,9 +283,6 @@ def get_employer_devices_formatted(db: Session, employer_id: int) -> list[dict]:
 
 def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, target_date: str, threshold: float) -> dict:
     """Returns top-level summary plus aggregated charts for the entire fleet."""
-    if not target_date:
-        target_date = _get_default_target_date(timeframe)
-        
     drivers = crud.get_drivers_by_employer(db, employer_id)
     if not drivers:
         return {"summary_report": {}, "trend_chart": [], "distractions_split": []}
@@ -363,9 +360,6 @@ def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, targe
 
 def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: int, timeframe: str, target_date: str, threshold: float) -> dict:
     """Returns in-depth analytical charts and history for a specific driver."""
-    if not target_date:
-        target_date = _get_default_target_date(timeframe)
-        
     driver = crud.get_driver_by_email(db, driver_email)
     if not driver or not any(emp.employer_id == employer_id for emp in driver.employers):
         return None
@@ -433,9 +427,6 @@ def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: i
 
 def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, timeframe: str, target_date: str, threshold: float) -> dict:
     """Returns profile info, quick stats, analytical charts, and pending requests."""
-    if not target_date:
-        target_date = _get_default_target_date(timeframe)
-        
     journeys = _get_driver_journeys(db, current_driver.driver_id, target_date)
     readings = crud.get_analytical_scores_for_driver(db, current_driver.driver_id, target_date=target_date, limit=10000)
     requests = crud.get_pending_requests_for_driver(db, current_driver.email)
