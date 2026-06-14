@@ -179,9 +179,7 @@ def get_analytical_scores_for_driver(db: Session, driver_id: int, target_date: s
         end_dt = (datetime.strptime(end_date, "%Y-%m-%d") if end_date else start_dt) + timedelta(days=1)
         query = query.filter(entities.Reading.timestamp >= start_dt, entities.Reading.timestamp < end_dt)
     elif target_date:
-        date_part = target_date.split(" ")[0]
-        start_dt = datetime.strptime(date_part, "%Y-%m-%d")
-        end_dt = start_dt + timedelta(days=1)
+        start_dt, end_dt = _parse_date_range(target_date)
         query = query.filter(entities.Reading.timestamp >= start_dt, entities.Reading.timestamp < end_dt)
 
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
@@ -194,9 +192,7 @@ def get_analytical_scores_for_fleet(db: Session, driver_ids: list[int], target_d
         end_dt = (datetime.strptime(end_date, "%Y-%m-%d") if end_date else start_dt) + timedelta(days=1)
         query = query.filter(entities.Reading.timestamp >= start_dt, entities.Reading.timestamp < end_dt)
     elif target_date:
-        date_part = target_date.split(" ")[0]
-        start_dt = datetime.strptime(date_part, "%Y-%m-%d")
-        end_dt = start_dt + timedelta(days=1)
+        start_dt, end_dt = _parse_date_range(target_date)
         query = query.filter(entities.Reading.timestamp >= start_dt, entities.Reading.timestamp < end_dt)
 
     return query.order_by(entities.Reading.timestamp.desc()).limit(limit).all()
