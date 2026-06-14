@@ -13,7 +13,6 @@ interface DriverAnalysisModalProps {
 
 export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [reportData, setReportData] = useState<any>(null);
   const [thresholdScore, setThresholdScore] = useState(15);
   const [debouncedThreshold, setDebouncedThreshold] = useState(15);
   const [picker, setPicker] = useState<PickerValue>({ startDate:null, endDate:null, timeframe:"week", hour:null });
@@ -23,7 +22,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
   function handleDateRangeChange(v: PickerValue) { setPicker(v); }
 
-  /* ── Chart zoom ── */
+  /* ── Chart zoom (outer level — survives threshold/date re-renders) ── */
   const CHART_W = 1000, CHART_H = 250;
   const svgRef   = useRef<SVGSVGElement>(null);
   const scrubRef = useRef<HTMLDivElement>(null);
@@ -32,6 +31,21 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const scrubDrag = useRef<{ sx: number; ox: number } | null>(null);
   const isZoomed  = vb.w < CHART_W * 0.99;
   const zoomPct   = Math.round(CHART_W / vb.w * 100);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!scrubDrag.current || !scrubRef.current) return;
+      const rect = scrubRef.current.getBoundingClientRect();
+      const { w } = vbRef.current;
+      const dx = (e.clientX - scrubDrag.current.sx) / rect.width * CHART_W;
+      const next = { ...vbRef.current, x: Math.max(0, Math.min(CHART_W - w, scrubDrag.current.ox + dx)) };
+      vbRef.current = next; setVb(next);
+    }
+    function onUp() { scrubDrag.current = null; }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
 
   function zoomBy(factor: number) {
     const { x, y, w, h } = vbRef.current;
@@ -46,57 +60,60 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   }
 
   function resetZoom() { const r={x:0,y:0,w:CHART_W,h:CHART_H}; vbRef.current=r; setVb(r); }
+  /* ─────────────────────────────────────────────────────────────────── */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [reportData, setReportData] = useState<any>(null);
 
-  /* ── Debounce threshold ── */
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedThreshold(thresholdScore), 500);
     return () => clearTimeout(timer);
   }, [thresholdScore]);
 
-  /* ── Lock body scroll while modal is open ── */
   useEffect(() => {
     setMounted(true);
     const originalStyle = window.getComputedStyle(document.body).overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = originalStyle; };
+    return () => {
+      document.body.style.overflow = originalStyle;
+    };
   }, []);
 
-  /* ── Fetch driver report ── */
   useEffect(() => {
-    setReportData(null);
-
-    const controller = new AbortController();
-
+    // Fetch real driver report data
     async function fetchReport() {
       try {
         const { getEmployerAuthToken, API_ENDPOINTS, COMMON_HEADERS } = await import("@/lib/api-config");
         const token = getEmployerAuthToken();
-        const url = new URL(API_ENDPOINTS.DRIVER_DETAILS(employee.email || "unknown"));
-        url.searchParams.append("timeframe", selectedTimeframe);
-        url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
-        if (startDate)             url.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
-        if (endDate)               url.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
-        if (selectedHour !== null) url.searchParams.append("hour", String(selectedHour));
-
-        const res = await fetch(url.toString(), {
-          signal: controller.signal,
-          headers: { "Authorization": token ? `Bearer ${token}` : "", ...COMMON_HEADERS },
+        const baseUrl = new URL(API_ENDPOINTS.DRIVER_DETAILS(employee.email || "unknown"));
+        baseUrl.searchParams.append("timeframe", selectedTimeframe);
+        baseUrl.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+        if (startDate)             baseUrl.searchParams.append("start_date", startDate.toISOString().split("T")[0]);
+        if (endDate)               baseUrl.searchParams.append("end_date",   endDate.toISOString().split("T")[0]);
+        if (selectedHour !== null) baseUrl.searchParams.append("hour", String(selectedHour));
+        
+        const res = await fetch(baseUrl.toString(), {
+          headers: {
+            "Authorization": token ? `Bearer ${token}` : "",
+            ...COMMON_HEADERS
+          }
         });
-        if (res.ok) setReportData(await res.json());
-      } catch (err: any) {
-        if (err.name !== "AbortError") console.error("Failed to fetch driver report:", err);
+        if (res.ok) {
+          const data = await res.json();
+          setReportData(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch driver report:", err);
       }
     }
-
+    
     fetchReport();
-    return () => controller.abort();
   }, [employee.email, debouncedThreshold, selectedTimeframe, startDate, endDate, selectedHour]);
 
   if (!mounted) return null;
 
-  /* ── Data processing ── */
+  // --- Dynamic Data based on employee or fetched report ---
   const analysis = reportData?.analysis;
-
+  
   const riskTrends = (() => {
     const raw = analysis?.trend_chart ?? reportData?.trend_chart ?? [];
     if (!raw.length) return [];
@@ -110,7 +127,10 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         const minNum = parseInt(mm ?? "0", 10);
         const key = `${datePart} ${hh}:${mm}`;
         let showLabel = false;
-        if (minNum % 5 === 0 && !seen.has(key)) { seen.add(key); showLabel = true; }
+        if (minNum % 5 === 0 && !seen.has(key)) {
+          seen.add(key);
+          showLabel = true;
+        }
         return { label, score: (t.score ?? t.value ?? 0) * 100, showLabel };
       });
     }
@@ -133,26 +153,28 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   })();
 
   const defaultDistractions = [
-    { type: "Phone call",      value: 35, color: "#3b82f6", duration: 420 },
-    { type: "Texting",         value: 25, color: "#ef4444", duration: 180 },
-    { type: "Talking",         value: 15, color: "#8b5cf6", duration: 150 },
-    { type: "Reaching Behind", value: 12, color: "#f59e0b", duration: 95  },
-    { type: "Drinking water",  value: 8,  color: "#06b6d4", duration: 65  },
-    { type: "Operating Radio", value: 5,  color: "#ec4899", duration: 55  },
+    { type: "Phone call", value: 35, color: "#3b82f6", duration: 420 },
+    { type: "Texting", value: 25, color: "#ef4444", duration: 180 },
+    { type: "Talking", value: 15, color: "#8b5cf6", duration: 150 },
+    { type: "Reaching Behind", value: 12, color: "#f59e0b", duration: 95 },
+    { type: "Drinking water", value: 8, color: "#06b6d4", duration: 65 },
+    { type: "Operating Radio", value: 5, color: "#ec4899", duration: 55 },
   ];
-
+  
+  // Standardize distractions data structure from backend
   const colorPalette = ["#3b82f6", "#ef4444", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"];
   let allDistractions = defaultDistractions;
-
+  
   const rawSplit = analysis?.distractions_split || reportData?.distractions_split || [];
+  
   if (rawSplit.length > 0) {
     allDistractions = rawSplit.map((d: any, i: number) => {
       const name = d.name ? d.name.charAt(0).toUpperCase() + d.name.slice(1) : "Unknown";
       return {
-        type:     name,
-        value:    d.value_percentage || d.value || 0,
+        type: name,
+        value: d.value_percentage || d.value || 0,
         duration: d.duration_minutes !== undefined ? Math.round(d.duration_minutes * 60) : (d.duration || 0),
-        color:    name.toLowerCase().includes("safe") ? "#22c55e" : colorPalette[i % colorPalette.length],
+        color: name.toLowerCase().includes("safe") ? "#22c55e" : colorPalette[i % colorPalette.length],
       };
     });
   }
@@ -162,29 +184,31 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
   const fmtPct = (v: number | undefined, fallback: string) =>
     v !== undefined ? `${Math.round(v * 100)}%` : fallback;
   const stats = {
-    totalTrips:     dr?.total_trips                 !== undefined ? `${dr.total_trips} Trips`               : `${employee.trips} Trips`,
-    totalDriveTime: dr?.total_drive_time_mins       !== undefined ? `${dr.total_drive_time_mins} Min`       : `${Math.max(employee.trips * 45, 120)} Min`,
-    riskyDriveTime: dr?.total_risky_drive_time_mins !== undefined ? `${dr.total_risky_drive_time_mins} Min` : "–",
-    alerts:         dr?.alerts                      !== undefined ? `${dr.alerts} Alert${dr.alerts !== 1 ? "s" : ""}` : "–",
-    avgDriverScore: fmtPct(dr?.avg_driver_score, employee.safetyScore + "%"),
-    avgRoadScore:   fmtPct(dr?.avg_road_score,   "–"),
-    avgRiskScore:   fmtPct(dr?.avg_risk_score,   `${(100 - employee.safetyScore).toFixed(1)}%`),
-    percentile95:   dr?.percentile_95th !== undefined ? `${Math.round(dr.percentile_95th * 100)}%` : "–",
-    eventRatio:     dr?.event_ratio     !== undefined ? `${Math.round(dr.event_ratio * 100)}%`     : "–",
-    significance:   dr?.significance    ?? (employee.safetyScore < 75 ? "Not Safe" : "Safe"),
+    totalTrips:      dr?.total_trips                    !== undefined ? `${dr.total_trips} Trips`               : `${employee.trips} Trips`,
+    totalDriveTime:  dr?.total_drive_time_mins          !== undefined ? `${dr.total_drive_time_mins} Min`       : `${Math.max(employee.trips * 45, 120)} Min`,
+    riskyDriveTime:  dr?.total_risky_drive_time_mins    !== undefined ? `${dr.total_risky_drive_time_mins} Min` : "–",
+    alerts:          dr?.alerts                         !== undefined ? `${dr.alerts} Alert${dr.alerts !== 1 ? "s" : ""}` : "–",
+    avgDriverScore:  fmtPct(dr?.avg_driver_score, employee.safetyScore + "%"),
+    avgRoadScore:    fmtPct(dr?.avg_road_score,   "–"),
+    avgRiskScore:    fmtPct(dr?.avg_risk_score,   `${(100 - employee.safetyScore).toFixed(1)}%`),
+    percentile95:    dr?.percentile_95th                !== undefined ? `${Math.round(dr.percentile_95th * 100)}%` : "–",
+    eventRatio:      dr?.event_ratio                    !== undefined ? `${Math.round(dr.event_ratio * 100)}%`     : "–",
+    significance:    dr?.significance                   ?? (employee.safetyScore < 75 ? "Not Safe" : "Safe"),
   };
   const isSafe = stats.significance.toLowerCase().includes("safe") && !stats.significance.toLowerCase().includes("not safe");
-  const displayName       = driverInfo?.name        ?? employee.name;
+  const displayName = driverInfo?.name ?? employee.name;
   const displayNationalId = driverInfo?.national_id ?? employee.nationalId;
-  const displayStatus     = driverInfo?.status      ?? (employee.safetyScore >= 85 ? "Elite" : employee.safetyScore >= 70 ? "Verified" : "Restricted");
+  const displayStatus = driverInfo?.status ?? (employee.safetyScore >= 85 ? "Elite" : employee.safetyScore >= 70 ? "Verified" : "Restricted");
+  const riskScore = dr?.avg_risk_score !== undefined ? dr.avg_risk_score : (100 - employee.safetyScore) / 100;
 
-  /* ── Line Chart ── */
+  // --- Line Chart Component (Risk Score / Time) ---
   const LineChart = () => {
     const W = 1000, H = 250;
     const PAD_L = 90, PAD_R = 40, PAD_T = 20, PAD_B = 55;
     const chartW = W - PAD_L - PAD_R;
     const chartH = H - PAD_T - PAD_B;
-
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = riskTrends.map((d: any) => (100 - d.score) / 100);
     const threshold = thresholdScore / 100;
     const maxData = data.length > 0 ? Math.max(...data, threshold) : threshold;
@@ -192,13 +216,17 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     const thresholdY = PAD_T + chartH - (threshold / maxVal) * chartH;
 
     const points = data.map((val: number, i: number) => {
-      const x = data.length > 1 ? PAD_L + (i / (data.length - 1)) * chartW : PAD_L + chartW / 2;
+      const x = data.length > 1
+        ? PAD_L + (i / (data.length - 1)) * chartW
+        : PAD_L + chartW / 2;
       const y = PAD_T + chartH - (val / maxVal) * chartH;
       return { x, y, label: riskTrends[i].label };
     });
 
     const labelStep = Math.max(1, Math.ceil(points.length / 8));
 
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const d = points.reduce((acc: string, p: any, i: number) =>
       i === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ""
     );
@@ -235,7 +263,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                Threshold = {thresholdScore}%
              </label>
              <input
-               id="threshold-slider" type="range" min="0" max="100" step="1"
+               id="threshold-slider"
+               type="range"
+               min="0"
+               max="100"
+               step="1"
                value={thresholdScore}
                onChange={(e) => setThresholdScore(Number(e.target.value))}
                className="w-24 h-1.5 bg-rose-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
@@ -255,6 +287,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
         <div className="relative flex-1 w-full mt-4 min-h-0">
           <svg ref={svgRef} viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`} className="w-full h-full pb-4 px-4 sm:px-10 drop-shadow-sm overflow-visible">
+            {/* Area under the line */}
             <defs>
               <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3b82f6" />
@@ -263,29 +296,42 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
             </defs>
             <path d={areaD} fill="url(#lineGradient)" opacity="0.15" />
 
+            {/* Grid lines (horizontal) */}
             {(maxVal === 1.0 ? [0, 0.2, 0.4, 0.6, 0.8, 1.0] : maxVal === 0.5 ? [0, 0.1, 0.2, 0.3, 0.4, 0.5] : [0, 0.1, 0.2, 0.3]).map((val) => {
               const y = PAD_T + chartH - (val / maxVal) * chartH;
-              return <line key={`grid-${val}`} x1={PAD_L} y1={y} x2={W-PAD_R} y2={y} stroke="#f1f5f9" strokeWidth="1" />;
+              return (
+                <line key={`grid-${val}`} x1={PAD_L} y1={y} x2={W-PAD_R} y2={y} stroke="#f1f5f9" strokeWidth="1" />
+              );
             })}
 
+            {/* Threshold Line */}
             <line x1={PAD_L} y1={thresholdY} x2={W-PAD_R} y2={thresholdY} stroke="#f43f5e" strokeWidth="2" strokeDasharray="6,4" opacity="0.8" />
+
+
+            {/* Data Line */}
             <path d={d} fill="none" stroke="#3b82f6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
 
+            {/* Points and X-axis Labels */}
             {points.map((p: {x: number, y: number, label: string}, i: number) => {
               const showLabel = timeRange === "Hour"
                 ? (riskTrends[i] as any).showLabel === true
                 : i % labelStep === 0 || i === points.length - 1;
               return (
                 <g key={`pt-${i}`}>
+                  {timeRange !== "Hour" && <circle cx={p.x} cy={p.y} r="5" fill="#fff" stroke="#3b82f6" strokeWidth="3" className="transition-all hover:r-6 hover:fill-blue-100 cursor-pointer" />}
                   {showLabel && <line x1={p.x} y1={PAD_T + chartH} x2={p.x} y2={PAD_T + chartH + 5} stroke="#cbd5e1" strokeWidth="2" />}
                   {showLabel && <text x={p.x} y={PAD_T + chartH + 22} textAnchor="middle" fontSize="11" className="fill-slate-500 font-bold uppercase tracking-wider">{p.label}</text>}
                 </g>
               );
             })}
 
+            {/* Y Axis Line */}
             <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
+            
+            {/* X Axis Line */}
             <line x1={PAD_L} y1={PAD_T + chartH} x2={W-PAD_R} y2={PAD_T + chartH} stroke="#cbd5e1" strokeWidth="2" strokeLinecap="round" />
 
+            {/* Y Axis Ticks and Labels (Drawn last so they are on top) */}
             {(maxVal === 1.0 ? [0, 0.2, 0.4, 0.6, 0.8, 1.0] : maxVal === 0.5 ? [0, 0.1, 0.2, 0.3, 0.4, 0.5] : [0, 0.1, 0.2, 0.3]).map((val) => {
               const y = PAD_T + chartH - (val / maxVal) * chartH;
               return (
@@ -295,7 +341,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                 </g>
               );
             })}
-            <text x={25} y={PAD_T + chartH / 2} transform={`rotate(-90 25 ${PAD_T + chartH / 2})`} textAnchor="middle" fontSize="12" className="fill-slate-400 font-black uppercase tracking-[0.2em]">Risk Score</text>
+            
+            {/* Y Axis Label */}
+            <text x={25} y={PAD_T + chartH / 2} transform={`rotate(-90 25 ${PAD_T + chartH / 2})`} textAnchor="middle" fontSize="12" className="fill-slate-400 font-black uppercase tracking-[0.2em]">
+              Risk Score
+            </text>
           </svg>
           {isZoomed && (
             <div ref={scrubRef} className="mx-10 mb-3 h-2 bg-slate-100 rounded-full relative cursor-pointer">
@@ -311,7 +361,7 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     );
   };
 
-  /* ── Donut Chart ── */
+  // --- Donut Chart Component ---
   const DonutChart = () => {
     let currentAngle = -Math.PI / 2;
     const cx = 150, cy = 150, R = 90, r = 35;
@@ -321,24 +371,48 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         <svg viewBox="0 0 300 300" className="w-full h-full max-h-[220px] drop-shadow-md overflow-visible">
           {allDistractions.map((d, i) => {
              const angle = (d.value / total) * Math.PI * 2;
-             const x1 = cx + R * Math.cos(currentAngle), y1 = cy + R * Math.sin(currentAngle);
-             const x2 = cx + R * Math.cos(currentAngle + angle), y2 = cy + R * Math.sin(currentAngle + angle);
-             const ix1 = cx + r * Math.cos(currentAngle), iy1 = cy + r * Math.sin(currentAngle);
-             const ix2 = cx + r * Math.cos(currentAngle + angle), iy2 = cy + r * Math.sin(currentAngle + angle);
+             const x1 = cx + R * Math.cos(currentAngle);
+             const y1 = cy + R * Math.sin(currentAngle);
+             const x2 = cx + R * Math.cos(currentAngle + angle);
+             const y2 = cy + R * Math.sin(currentAngle + angle);
+             
+             const ix1 = cx + r * Math.cos(currentAngle);
+             const iy1 = cy + r * Math.sin(currentAngle);
+             const ix2 = cx + r * Math.cos(currentAngle + angle);
+             const iy2 = cy + r * Math.sin(currentAngle + angle);
+             
              const largeArc = angle > Math.PI ? 1 : 0;
              const pathD = `M ${x1} ${y1} A ${R} ${R} 0 ${largeArc} 1 ${x2} ${y2} L ${ix2} ${iy2} A ${r} ${r} 0 ${largeArc} 0 ${ix1} ${iy1} Z`;
+             
              const midAngle = currentAngle + angle / 2;
              const labelR = R + 15;
              let lx = cx + labelR * Math.cos(midAngle);
              const ly = cy + labelR * Math.sin(midAngle);
              const isRight = lx > cx;
              lx += isRight ? 4 : -4;
+
              currentAngle += angle;
+
              return (
                <g key={i}>
-                 <path d={pathD} fill={d.color} stroke="#ffffff" strokeWidth="2" className="transition-all hover:opacity-80 cursor-pointer hover:scale-[1.02] origin-center" />
+                 <path 
+                   d={pathD} 
+                   fill={d.color} 
+                   stroke="#ffffff" 
+                   strokeWidth="2"
+                   className="transition-all hover:opacity-80 cursor-pointer hover:scale-[1.02] origin-center" 
+                 />
                  {d.value >= 5 && (
-                   <text x={lx} y={ly} textAnchor={isRight ? "start" : "end"} dominantBaseline="middle" fontSize="10" fontWeight="bold" fill="#1e293b" className="drop-shadow-sm pointer-events-none">
+                   <text 
+                     x={lx} 
+                     y={ly} 
+                     textAnchor={isRight ? "start" : "end"} 
+                     dominantBaseline="middle" 
+                     fontSize="10" 
+                     fontWeight="bold" 
+                     fill="#1e293b" 
+                     className="drop-shadow-sm pointer-events-none"
+                   >
                      {d.type.split(" ")[0]} {d.value}%
                    </text>
                  )}
@@ -350,17 +424,17 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
     );
   };
 
-  /* ── Horizontal Bar Chart — safe driving excluded ── */
+  // --- Horizontal Bar Chart ---
   const HorizontalBarChart = () => {
-    const filtered = allDistractions.filter(d => !d.type.toLowerCase().includes("safe"));
-    const maxVal = Math.max(...filtered.map(d => d.duration), 1);
+    const maxVal = Math.max(...allDistractions.map(d => d.duration));
+    
     return (
       <div className="w-full h-full flex flex-col justify-center py-2">
          <div className="flex-1 flex flex-col justify-center gap-4 relative">
-           {filtered.slice(0, 5).map((d, i) => (
+           {allDistractions.slice(0, 5).map((d, i) => (
              <div key={i} className="flex items-center h-8 group w-full">
-               <div
-                 className="h-full rounded-r-lg flex items-center px-3 text-white text-[11px] font-black transition-all shadow-sm whitespace-nowrap overflow-visible"
+               <div 
+                 className="h-full rounded-r-lg flex items-center px-3 text-white text-[11px] font-black transition-all shadow-sm whitespace-nowrap overflow-visible" 
                  style={{ width: `${Math.max((d.duration / maxVal) * 100, 15)}%`, backgroundColor: d.color }}
                >
                  <span className="drop-shadow-[0_1px_2px_rgba(0,0,0,0.5)] z-10">{d.type}</span>
@@ -369,9 +443,14 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
              </div>
            ))}
          </div>
+         {/* X Axis */}
          <div className="flex text-[10px] font-bold text-slate-400 mt-6 border-t border-slate-200 pt-3 w-full">
             <div className="flex-1 flex justify-between px-1">
-              <span>0s</span><span>100s</span><span>200s</span><span>300s</span><span>400s+</span>
+              <span>0s</span>
+              <span>100s</span>
+              <span>200s</span>
+              <span>300s</span>
+              <span>400s+</span>
             </div>
          </div>
       </div>
@@ -380,11 +459,11 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-2xl animate-fade-in">
-      <div
+      <div 
         className="relative w-full max-w-[1200px] max-h-[95vh] flex flex-col rounded-[2rem] bg-slate-50 shadow-[0_32px_64px_-12px_rgba(0,0,0,0.3)] ring-1 ring-white/20 animate-modal-pop overflow-hidden"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Top Header */}
         <div className="bg-white px-8 py-5 flex items-center justify-between border-b border-blue-50/50">
           <div className="flex items-center gap-5">
             <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-lg font-black text-white shadow-md shadow-blue-200">
@@ -408,7 +487,8 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
               </div>
             </div>
           </div>
-          <button
+          
+          <button 
             onClick={onClose}
             className="p-2.5 text-slate-400 hover:text-blue-600 bg-slate-50 rounded-xl hover:bg-blue-50 transition-all active:scale-95 border border-slate-100"
           >
@@ -417,19 +497,22 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
         </div>
 
         <div className="p-6 sm:p-8 overflow-y-auto flex-1">
-          {/* Chart */}
+          
+          {/* Top Chart Section */}
           <div className="h-[280px] w-full rounded-[1.5rem] bg-white border border-blue-50 shadow-sm mb-6 overflow-hidden relative group transition-shadow hover:shadow-md">
              <LineChart />
           </div>
 
-          {/* Panels */}
+          {/* Bottom Panels Layout */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 auto-rows-fr">
-             {/* Daily Report */}
+             
+             {/* Panel 1: Daily Report */}
              <div className="rounded-[1.5rem] bg-white border border-blue-50 shadow-sm p-6 flex flex-col transition-shadow hover:shadow-md">
                 <div className="flex items-center gap-2 mb-6">
                   <div className="w-1.5 h-4 bg-blue-500 rounded-full" />
                   <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Daily Report</h2>
                 </div>
+                
                 <div className="flex-1 flex flex-col justify-between text-[13px] font-bold text-slate-600">
                   {[
                     ["Total Trips",      stats.totalTrips],
@@ -456,31 +539,38 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
                 </div>
              </div>
 
-             {/* Distractions Donut */}
+             {/* Panel 2: Distractions Donut */}
              <div className="rounded-[1.5rem] bg-white border border-blue-50 shadow-sm p-6 flex flex-col relative transition-shadow hover:shadow-md overflow-hidden">
                 <div className="flex items-center gap-2 mb-2 z-10">
                   <div className="w-1.5 h-4 bg-indigo-500 rounded-full" />
                   <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Distractions Split</h2>
                 </div>
+                
                 <div className="flex-1 w-full flex items-center justify-start pl-4 relative">
                    <DonutChart />
                 </div>
              </div>
 
-             {/* Duration Bar Chart */}
+             {/* Panel 3: Duration Bar Chart */}
              <div className="rounded-[1.5rem] bg-white border border-blue-50 shadow-sm p-6 flex flex-col transition-shadow hover:shadow-md">
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
                   <h2 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Duration per Type</h2>
                 </div>
+                
                 <div className="flex-1 w-full relative">
                    <HorizontalBarChart />
                 </div>
              </div>
+
           </div>
         </div>
+
       </div>
     </div>,
     document.body
   );
 }
+
+
+

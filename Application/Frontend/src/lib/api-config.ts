@@ -1,4 +1,4 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://daras-backend.vercel.app";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://unwistful-doleritic-elissa.ngrok-free.dev";
 
 export const API_ENDPOINTS = {
   LOGIN: `${API_BASE_URL}/api/v1/employer/login`,
@@ -24,6 +24,7 @@ export const API_ENDPOINTS = {
 };
 
 export const COMMON_HEADERS = {
+  "ngrok-skip-browser-warning": "true",
   "Accept": "application/json",
 };
 
