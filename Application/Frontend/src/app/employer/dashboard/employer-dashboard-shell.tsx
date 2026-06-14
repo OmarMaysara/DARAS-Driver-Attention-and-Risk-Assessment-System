@@ -12,7 +12,7 @@ import {
   type ReportNotification,
 } from "../employer-session";
 import { API_BASE_URL, COMMON_HEADERS, getEmployerAuthToken, getEmployerId } from "@/lib/api-config";
-import { Check, HelpCircle, User, X } from "lucide-react";
+import { Bell, Building2, Check, HelpCircle, User, UserCheck, UserX, X } from "lucide-react";
 
 function loadNotifications(): ReportNotification[] {
   if (typeof window === "undefined") return [];
