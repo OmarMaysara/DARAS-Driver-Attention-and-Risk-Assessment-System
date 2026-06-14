@@ -5,7 +5,7 @@ import { EmployerDashboardShell } from "../employer-dashboard-shell";
 import { EMPLOYEES_KEY, type Employee } from "../../employer-session";
 import { API_ENDPOINTS, COMMON_HEADERS, getEmployerAuthToken, getEmployerId } from "@/lib/api-config";
 import { Download, Users, AlertTriangle } from "lucide-react";
-import { DateRangePicker, type PickerValue } from "@/app/components/date-range-picker";
+import { DateRangePicker, type PickerValue, toLocalDateString } from "@/app/components/date-range-picker";
 
 function loadEmployees(): Employee[] {
   if (typeof window === "undefined") return [];

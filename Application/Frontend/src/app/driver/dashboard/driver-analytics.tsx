@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Download, Clock, MapPin, AlertTriangle, Route } from "lucide-react";
-import { DateRangePicker, type PickerValue, type TimeframeMode } from "@/app/components/date-range-picker";
-
+import { DateRangePicker, type PickerValue, type TimeframeMode, toLocalDateString } from "@/app/components/date-range-picker";
 /* ========== Types ========== */
 interface DriverData {
   safetyScore: number;
@@ -369,10 +368,12 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
           } else if (selectedTimeframe.toLowerCase() === "month") {
             // Format: YYYY-MM (e.g., 2026-06)
             targetDate = `${year}-${month}`;
-          } else if (selectedTimeframe.toLowerCase() === "day" || selectedTimeframe.toLowerCase() === "week") {
+          } else if (selectedTimeframe.toLowerCase() === "day") {
             // Format: YYYY-MM-DD (e.g., 2026-06-05)
             targetDate = localDateStr;
           }
+          // "week" is handled below via start_date/end_date — a single
+          // target_date can't represent a 7-day range.
         }
         
         // Build URL with correct parameters
@@ -380,6 +381,11 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
         url.searchParams.append("timeframe", selectedTimeframe.toLowerCase());
         if (targetDate) url.searchParams.append("target_date", targetDate);
         url.searchParams.append("threshold", (debouncedThreshold / 100).toString());
+
+        if (selectedTimeframe.toLowerCase() === "week" && startDate && endDate) {
+          url.searchParams.append("start_date", toLocalDateString(startDate));
+          url.searchParams.append("end_date", toLocalDateString(endDate));
+        }
 
         const res = await fetch(url.toString(), {
           headers: {
@@ -391,7 +397,7 @@ export function DriverAnalytics({ driverId, deviceSerial }: { driverId: string; 
       } catch (err) { console.error(err); }
     }
     fetchReport();
-  }, [selectedTimeframe, debouncedThreshold, startDate, selectedHour]);
+  }, [selectedTimeframe, debouncedThreshold, startDate, endDate, selectedHour]);
 
   if (!mounted) return <div className="p-20 text-center animate-pulse text-slate-400 font-black uppercase tracking-[0.3em]">Decoding Telemetry...</div>;
 

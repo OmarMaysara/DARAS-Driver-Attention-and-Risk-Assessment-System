@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { DateRangePicker, type PickerValue } from "@/app/components/date-range-picker";
-import { createPortal } from "react-dom";
+import { DateRangePicker, type PickerValue, toLocalDateString } from "@/app/components/date-range-picker";import { createPortal } from "react-dom";
 import { type Employee } from "../employer-session";
 
 interface DriverAnalysisModalProps {
@@ -101,12 +100,17 @@ export function DriverAnalysisModal({ employee, onClose }: DriverAnalysisModalPr
           const mo = String(startDate.getMonth() + 1).padStart(2, "0");
           const dy = String(startDate.getDate()).padStart(2, "0");
           const localDate = `${yr}-${mo}-${dy}`;
-          let targetDate = localDate;
-          if (selectedTimeframe === "hour" && selectedHour !== null)
-            targetDate = `${localDate} ${String(selectedHour).padStart(2, "0")}`;
-          else if (selectedTimeframe === "month")
-            targetDate = `${yr}-${mo}`;
-          baseUrl.searchParams.append("target_date", targetDate);
+          if (selectedTimeframe === "hour" && selectedHour !== null) {
+            baseUrl.searchParams.append("target_date", `${localDate} ${String(selectedHour).padStart(2, "0")}`);
+          } else if (selectedTimeframe === "month") {
+            baseUrl.searchParams.append("target_date", `${yr}-${mo}`);
+          } else if (selectedTimeframe === "day") {
+            baseUrl.searchParams.append("target_date", localDate);
+          } else if (selectedTimeframe === "week" && endDate) {
+            // "week" needs a range — a single target_date can't represent 7 days
+            baseUrl.searchParams.append("start_date", localDate);
+            baseUrl.searchParams.append("end_date", toLocalDateString(endDate));
+          }
         }
         
         const res = await fetch(baseUrl.toString(), {

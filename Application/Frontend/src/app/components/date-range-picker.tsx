@@ -35,6 +35,15 @@ function weekBounds(d: Date): [Date, Date] {
   return [mon, sun];
 }
 
+/** Formats a Date as YYYY-MM-DD using LOCAL date components — avoids the
+ *  off-by-one-day shift toISOString() introduces for positive UTC offsets. */
+export function toLocalDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function isInWeek(day: Date, anchor: Date) {
   const [s, e] = weekBounds(anchor);
   const d = new Date(day); d.setHours(12);
