@@ -476,7 +476,7 @@ export default function ReportsPage() {
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{displayStats.totalDrivers} Drivers</span>
-                <span className="text-slate-300">ΓÇó</span>
+                <span className="text-slate-300">{"\u2022"}</span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Avg Risk: <span style={{ color: displayStats.statusColor }}>{displayStats.avgRiskScore}</span>
                 </span>
