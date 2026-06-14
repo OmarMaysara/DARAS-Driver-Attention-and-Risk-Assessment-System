@@ -5,9 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   EMPLOYER_REGISTRATION_KEY,
+  EMPLOYER_NOTIFICATIONS_KEY,
   EMPLOYEES_KEY,
   type Employee,
   type EmployerRegistration,
+  type ReportNotification,
 } from "../employer-session";
 import { API_BASE_URL, COMMON_HEADERS, getEmployerAuthToken, getEmployerId } from "@/lib/api-config";
 import { Check, HelpCircle, User, X } from "lucide-react";
