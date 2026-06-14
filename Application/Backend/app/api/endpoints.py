@@ -113,7 +113,7 @@ async def get_fleet_analysis(
     target_date: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date:   str | None = Query(None),
-    threshold: float = Query(0.75),
+    threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
     db: Session = Depends(get_db),
     current_employer = Depends(get_current_employer)          # was get_current_driver
 ):
@@ -130,7 +130,7 @@ async def get_driver_detailed_view(
     target_date: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date:   str | None = Query(None),
-    threshold: float = Query(0.75),
+    threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
     db: Session = Depends(get_db),
     current_employer = Depends(get_current_employer)          # was get_current_driver
 ):
@@ -153,7 +153,7 @@ async def get_driver_dashboard(
     target_date: str | None = Query(None, description="..."),
     start_date: str | None = Query(None, description="Range start, e.g. '2026-06-08' (week/month views)"),
     end_date: str | None = Query(None, description="Range end, inclusive"),
-    threshold: float = Query(0.75, ...),
+    threshold: float = Query(0.75, description="Risk score threshold to calculate event ratio"),
     db: Session = Depends(get_db),
     current_driver = Depends(get_current_driver)
 ):
