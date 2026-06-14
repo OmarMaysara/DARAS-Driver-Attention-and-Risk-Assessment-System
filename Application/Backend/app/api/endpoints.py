@@ -149,17 +149,15 @@ async def get_driver_detailed_view(
 
 @router.get("/dashboard/driver/details", tags=["Dashboard - Driver"])
 async def get_driver_dashboard(
-    timeframe: str = Query("day"),
-    target_date: str | None = Query(None),
-    start_date: str | None = Query(None),   # ← add these two
-    end_date:   str | None = Query(None),   # ← (end_date used below)
-    threshold: float = Query(0.75),
+    timeframe: str = Query("day", description="Grouping timeframe: hour, day, week, month"),
+    target_date: str | None = Query(None, description="..."),
+    start_date: str | None = Query(None, description="Range start, e.g. '2026-06-08' (week/month views)"),
+    end_date: str | None = Query(None, description="Range end, inclusive"),
+    threshold: float = Query(0.75, ...),
     db: Session = Depends(get_db),
     current_driver = Depends(get_current_driver)
 ):
-    # start_date from the picker takes precedence over legacy target_date
-    effective_date = start_date or target_date
-    return operations.get_full_driver_dashboard(db, current_driver, timeframe, target_date, threshold)
+    return operations.get_full_driver_dashboard(db, current_driver, timeframe, target_date, threshold, start_date, end_date)
 
 @router.post("/dashboard/driver/start-trip", tags=["Dashboard - Driver"])
 async def driver_start_trip(payload: TripRequest, db: Session = Depends(get_db), current_driver = Depends(get_current_driver)):
