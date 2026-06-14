@@ -28,8 +28,15 @@ export function DriverRegisterForm({ onSwitchToSignIn }: DriverRegisterFormProps
     e.preventDefault();
     const { driverName, phoneNumber, nationalId, licenseExpirationDate, email, password } = formData;
 
+    // Basic empty field validation
     if (!driverName || !phoneNumber || !nationalId || !licenseExpirationDate || !email || !password) {
       showToast("Please fill in all fields.", "warning");
+      return;
+    }
+
+    // NEW: Password length validation
+    if (password.length < 8) {
+      showToast("Password must be at least 8 characters long.", "warning");
       return;
     }
 
@@ -43,7 +50,7 @@ export function DriverRegisterForm({ onSwitchToSignIn }: DriverRegisterFormProps
           ...COMMON_HEADERS,
         },
         body: JSON.stringify({
-          name: driverName, // Try 'name' or 'driver_name', 'name' is common
+          // FIXED: Strictly matching the expected JSON payload
           driver_name: driverName, 
           phone_number: phoneNumber,
           national_id: nationalId,
@@ -57,7 +64,7 @@ export function DriverRegisterForm({ onSwitchToSignIn }: DriverRegisterFormProps
         let errorMsg = `Registration failed (${response.status})`;
         try {
           const errorData = await response.json();
-          errorMsg = errorData.detail || errorMsg;
+          errorMsg = errorData.detail || errorData.message || errorMsg;
         } catch { /* ignore */ }
         throw new Error(errorMsg);
       }

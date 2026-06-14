@@ -50,14 +50,13 @@ type FormState = typeof EMPTY_FORM;
 
 function AddEmployeeModal({
   onClose,
-  onAdd,
 }: {
   onClose: () => void;
-  onAdd: (emp: Employee) => void;
 }) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<FormState>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [invited, setInvited] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -82,22 +81,8 @@ function AddEmployeeModal({
 
     setIsSubmitting(true);
     const email = form.email.trim();
-    const emp: Employee = {
-      id: `emp-${Date.now()}`,
-      email,
-      nationalId: "",
-      name: email, // display email until driver fills their profile
-      phoneNumber: "",
-      licenseExpiration: "",
-      role: "Driver",
-      safetyScore: 100,
-      trips: 0,
-      incidents: 0,
-      lastActive: new Date().toISOString(),
-    };
 
     try {
-      // Get the currently logged-in employer's ID and auth token from session
       const token = getEmployerAuthToken();
       let employerId = 999999;
       try {
@@ -108,36 +93,26 @@ function AddEmployeeModal({
         }
       } catch { /* use fallback */ }
 
-      const payload = {
-        driver_email: email,
-        employer_id: employerId,
-      };
-
-      console.log("Inviting driver by email...", payload);
-
-      const url = API_ENDPOINTS.ADD_EMPLOYEE;
-      const response = await fetch(url, {
+      const response = await fetch(API_ENDPOINTS.ADD_EMPLOYEE, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": token ? `Bearer ${token}` : "",
           "ngrok-skip-browser-warning": "true",
-          "Accept": "application/json"
+          "Accept": "application/json",
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ driver_email: email, employer_id: employerId }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error("Backend rejection details:", errorData);
         throw new Error(`Server returned ${response.status}: ${JSON.stringify(errorData)}`);
       }
 
-      onAdd(emp);
-      onClose();
+      setInvited(true);
     } catch (err) {
       console.error("Invite Failed:", err);
-      alert(`Failed to add employee: ${err instanceof Error ? err.message : "Unknown error"}. Check your browser console (F12) for details.`);
+      alert(`Failed to send invite: ${err instanceof Error ? err.message : "Unknown error"}.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -175,6 +150,35 @@ function AddEmployeeModal({
             "0 24px 64px rgba(15,23,42,0.18), 0 0 0 1px rgba(148,163,184,0.15)",
         }}
       >
+        {invited ? (
+          <div style={{ textAlign: "center", padding: "8px 0 16px" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>✉️</div>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0f172a", marginBottom: 8 }}>
+              Invitation sent!
+            </h2>
+            <p style={{ margin: "0 0 24px", fontSize: 13, color: "#64748b", lineHeight: 1.6 }}>
+              The driver will appear in your fleet roster once they accept the invitation.
+            </p>
+            <button
+              onClick={onClose}
+              style={{
+                width: "100%",
+                border: "none",
+                background: "linear-gradient(135deg,#2563eb,#1d4ed8)",
+                borderRadius: 10,
+                padding: "11px 16px",
+                fontSize: 14,
+                fontWeight: 700,
+                color: "#fff",
+                cursor: "pointer",
+                boxShadow: "0 4px 12px rgba(37,99,235,0.30)",
+              }}
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+        <>
         <h2
           style={{
             margin: 0,
@@ -294,6 +298,8 @@ function AddEmployeeModal({
             </button>
           </div>
         </form>
+        </>
+        )}
       </div>
     </div>,
     document.body
@@ -409,12 +415,6 @@ export function EmployeeRankingTable() {
 
   const sorted = [...employees].sort((a, b) => a.name.localeCompare(b.name));
 
-  function addEmployee(emp: Employee) {
-    const next = [...employees, emp];
-    setEmployees(next);
-    saveEmployees(next);
-  }
-
   async function removeEmployee(id: string) {
     try {
       const { API_ENDPOINTS, getEmployerAuthToken, COMMON_HEADERS } = await import("@/lib/api-config");
@@ -454,7 +454,6 @@ export function EmployeeRankingTable() {
       {showModal && (
         <AddEmployeeModal
           onClose={() => setShowModal(false)}
-          onAdd={addEmployee}
         />
       )}
 

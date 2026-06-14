@@ -71,7 +71,7 @@ export default function CalibrationPage() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [bboxes, setBboxes]     = useState<BBox[]>([]);
   // natural pixel dimensions of the snapshot image — used to convert bbox px → %
-  const [imgDims, setImgDims]   = useState({ w: 1280, h: 720 });
+  const [imgDims, setImgDims]   = useState({ w: 640, h: 480 });
 
   /* ── road marking ── */
   const [points, setPoints] = useState<Point[]>([
@@ -169,8 +169,8 @@ export default function CalibrationPage() {
 
   /* ── pixel coords for display ── */
   const pixelCoords = useMemo(() =>
-    points.map(p => ({ x: Math.round(p.x * 12.8), y: Math.round(p.y * 7.2) })),
-    [points]
+    points.map(p => ({ x: Math.round((p.x / 100) * imgDims.w), y: Math.round((p.y / 100) * imgDims.h) })),
+    [points, imgDims]
   );
 
   /* ── drag handlers ── */
@@ -408,8 +408,8 @@ export default function CalibrationPage() {
           {(step === "marking" || step === "bbox") && (
             <div
               ref={containerRef}
-              className="relative w-full rounded-[2rem] overflow-hidden border border-blue-100 shadow-2xl bg-slate-900 touch-none select-none"
-              style={{ aspectRatio: "16/9" }}
+              className="relative mx-auto rounded-[2rem] overflow-hidden border border-blue-100 shadow-2xl bg-slate-900 touch-none select-none"
+              style={{ width: "640px", height: "480px", maxWidth: "100%" }}
               onPointerMove={handlePointerMove}
               onPointerUp={() => setActiveIdx(null)}
               onPointerLeave={() => setActiveIdx(null)}
