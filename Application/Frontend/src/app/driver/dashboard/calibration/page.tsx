@@ -416,19 +416,20 @@ export default function CalibrationPage() {
             >
               {/* Base image */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imageUrl}
-                alt="Calibration frame"
-                className="absolute inset-0 w-full h-full object-cover"
-                draggable={false}
-                onLoad={e => {
-                  const img = e.currentTarget;
-                  if (img.naturalWidth && img.naturalHeight) {
-                    setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
-                  }
-                }}
-              />
-
+              {imageUrl && (
+                <img
+                  src={imageUrl}
+                  alt="Calibration frame"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  draggable={false}
+                  onLoad={e => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) {
+                      setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+                    }
+                  }}
+                />
+              )}
               {/* Dark gradient overlay */}
               <div className="absolute inset-0 bg-gradient-to-t from-blue-950/20 to-transparent pointer-events-none" />
 
@@ -578,5 +579,19 @@ export default function CalibrationPage() {
         </div>
       </main>
     </div>
+  );
+}
+export default function CalibrationPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Loading Calibration...</p>
+        </div>
+      </div>
+    }>
+      <CalibrationPageContent />
+    </Suspense>
   );
 }
