@@ -118,9 +118,8 @@ async def get_fleet_analysis(
     current_employer = Depends(get_current_employer)          # was get_current_driver
 ):
     """Returns top-level summary plus aggregated charts for the entire fleet."""
-    effective_date = start_date or target_date
-    return operations.get_fleet_wide_analysis(                # was get_full_driver_dashboard
-        db, current_employer.employer_id, timeframe, effective_date, threshold
+    return operations.get_fleet_wide_analysis(
+        db, current_employer.employer_id, timeframe, target_date, threshold, start_date, end_date
     )
 
 @router.get("/dashboard/employer/drivers/{driver_email}/details", tags=["Dashboard - Employer"])
@@ -135,9 +134,8 @@ async def get_driver_detailed_view(
     current_employer = Depends(get_current_employer)          # was get_current_driver
 ):
     """Returns in-depth analytical charts and history for a specific driver."""
-    effective_date = start_date or target_date
-    details = operations.get_driver_detailed_dashboard(       # was get_full_driver_dashboard
-        db, driver_email, current_employer.employer_id, timeframe, effective_date, threshold
+    details = operations.get_driver_detailed_dashboard(
+        db, driver_email, current_employer.employer_id, timeframe, target_date, threshold, start_date, end_date
     )
     if not details:
         raise HTTPException(status_code=404, detail="Driver not found in your fleet")

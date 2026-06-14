@@ -109,12 +109,9 @@ def _generate_display_chart(readings, base_chart, timeframe: str) -> list[dict]:
     elif timeframe == "day":
         fmt = "%Y-%m-%d %H:%M"
         delta = timedelta(minutes=1)
-    elif timeframe == "month":
+    else:  # month, week, and any other timeframe — hourly buckets
         fmt = "%Y-%m-%d %H:00"
         delta = timedelta(hours=1)
-    else:
-        fmt = "%Y-%m-%d %H:00"
-        delta = timedelta(minutes=1)
 
     min_time = min(r.timestamp for r in readings)
     max_time = max(r.timestamp for r in readings)
@@ -125,12 +122,9 @@ def _generate_display_chart(readings, base_chart, timeframe: str) -> list[dict]:
     elif timeframe == "day":
         curr_time = min_time.replace(second=0, microsecond=0)
         end_time = max_time.replace(second=0, microsecond=0)
-    elif timeframe == "month":
+    else:  # month, week
         curr_time = min_time.replace(minute=0, second=0, microsecond=0)
         end_time = max_time.replace(minute=0, second=0, microsecond=0)
-    else:
-        curr_time = min_time.replace(second=0, microsecond=0)
-        end_time = max_time.replace(second=0, microsecond=0)
 
     base_lookup = {item["timestamp"]: item["score"] for item in base_chart}
     
@@ -171,9 +165,9 @@ def _calculate_distractions_split(readings) -> list[dict]:
         for state, count in state_counts.items()
     ]
 
-def _get_driver_journeys(db: Session, driver_id: int, target_date: str = None) -> list[dict]:
+def _get_driver_journeys(db: Session, driver_id: int, target_date: str = None, start_date: str = None, end_date: str = None) -> list[dict]:
     """Groups continuous split-second telemetry data into distinct physical trips (Journeys)."""
-    readings = crud.get_analytical_scores_for_driver(db, driver_id, target_date=target_date, limit=10000)
+    readings = crud.get_analytical_scores_for_driver(db, driver_id, target_date=target_date, start_date=start_date, end_date=end_date, limit=10000)
     if not readings: 
         return []
 
@@ -314,9 +308,9 @@ def get_employer_devices_formatted(db: Session, employer_id: int) -> list[dict]:
         
     return formatted_devices
 
-def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, target_date: str, threshold: float) -> dict:
+def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, target_date: str, threshold: float, start_date: str = None, end_date: str = None) -> dict:
     """Returns top-level summary plus aggregated charts for the entire fleet."""
-    if not target_date:
+    if not start_date and not target_date:
         target_date = _get_default_target_date(timeframe)
         
     drivers = crud.get_drivers_by_employer(db, employer_id)
@@ -324,16 +318,16 @@ def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, targe
         return {"summary_report": {}, "trend_chart": [], "distractions_split": []}
 
     driver_ids = [d.driver_id for d in drivers]
-    readings = crud.get_analytical_scores_for_fleet(db, driver_ids, target_date=target_date, limit=20000)
+    readings = crud.get_analytical_scores_for_fleet(db, driver_ids, target_date=target_date, start_date=start_date, end_date=end_date, limit=20000)
     
     total_trips = 0
     driver_stats = []
 
     for driver in drivers:
-        d_readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, target_date=target_date, limit=500)
+        d_readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, target_date=target_date, start_date=start_date, end_date=end_date, limit=500)
         d_rms_score = _calculate_rms_score([r.driver_score for r in d_readings])
         
-        driver_journeys = _get_driver_journeys(db, driver.driver_id, target_date)
+        driver_journeys = _get_driver_journeys(db, driver.driver_id, target_date, start_date, end_date)
         total_trips += len(driver_journeys)
         driver_stats.append({"name": driver.driver_name, "score": round(d_rms_score, 2)})
 
@@ -397,17 +391,17 @@ def get_fleet_wide_analysis(db: Session, employer_id: int, timeframe: str, targe
         "distractions_split": distractions_split
     }
 
-def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: int, timeframe: str, target_date: str, threshold: float) -> dict:
+def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: int, timeframe: str, target_date: str, threshold: float, start_date: str = None, end_date: str = None) -> dict:
     """Returns in-depth analytical charts and history for a specific driver."""
-    if not target_date:
+    if not start_date and not target_date:
         target_date = _get_default_target_date(timeframe)
         
     driver = crud.get_driver_by_email(db, driver_email)
     if not driver or not any(emp.employer_id == employer_id for emp in driver.employers):
         return None
 
-    readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, target_date=target_date, limit=10000)
-    journeys = _get_driver_journeys(db, driver.driver_id, target_date)
+    readings = crud.get_analytical_scores_for_driver(db, driver.driver_id, target_date=target_date, start_date=start_date, end_date=end_date, limit=10000)
+    journeys = _get_driver_journeys(db, driver.driver_id, target_date, start_date, end_date)
     
     if not readings:
         return {
@@ -470,13 +464,16 @@ def get_driver_detailed_dashboard(db: Session, driver_email: str, employer_id: i
 # 5. DASHBOARD: DRIVER
 # ==========================================
 
-def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, timeframe: str, target_date: str, threshold: float) -> dict:
+def get_full_driver_dashboard(db: Session, current_driver: entities.Driver, timeframe: str, target_date: str, threshold: float, start_date: str = None, end_date: str = None) -> dict:
     """Returns profile info, quick stats, analytical charts, and pending requests."""
-    if not target_date:
+    if not start_date and not target_date:
         target_date = _get_default_target_date(timeframe)
-        
-    journeys = _get_driver_journeys(db, current_driver.driver_id, target_date)
-    readings = crud.get_analytical_scores_for_driver(db, current_driver.driver_id, target_date=target_date, limit=10000)
+
+    journeys = _get_driver_journeys(db, current_driver.driver_id, target_date, start_date, end_date)
+    readings = crud.get_analytical_scores_for_driver(
+        db, current_driver.driver_id, target_date=target_date,
+        start_date=start_date, end_date=end_date, limit=10000
+    )
     requests = crud.get_pending_requests_for_driver(db, current_driver.email)
     formatted_requests = [{"request_id": r.request_id, "employer_name": r.employer.employer_name} for r in requests]
 
